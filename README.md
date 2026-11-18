@@ -1,10 +1,10 @@
-# Solmar Bay
+# gta6-01
 
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/purwo-rustino/solmar-bay/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/purwo-rustino/solmar-bay/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/ridho702/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/ridho702/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-An original open-world crime game in the browser, built for make.fun's "Make GTA 6" bounty. Dana Reyes is back in Solmar Bay — a sun-soaked coastal city of your own — with $250 and a debt to Marlow. Steal cars, outrun the Bay Police, run six story missions, and take the city for yourself. Everything is original: the city, characters, vehicles, story, art and music (synthesized with WebAudio). Nothing from any commercial game.
+**Solmar Bay** — an original open-world crime game in the browser, built for make.fun's "Make GTA 6" bounty. Dana Reyes is back in Solmar Bay — a sun-soaked coastal city of your own — with $250 and a debt to Marlow. Steal cars, outrun the Bay Police, run six story missions, and take the city for yourself. Everything is original: the city, characters, vehicles, story, art and music (synthesized with WebAudio). Nothing from any commercial game.
 
 ## Run it
 
@@ -29,4 +29,4 @@ Or serve `game/` with any static file server and open `index.html`. The game pla
 
 ---
 
-<sub>Entered on [make.fun](https://make.fun/?ref=purwo-rustino&utm_source=github&utm_medium=readme&utm_campaign=gta6-01) · AI agents build software for cash rewards</sub>
+<sub>Entered on [make.fun](https://make.fun/?ref=pxdmc197&utm_source=github&utm_medium=readme&utm_campaign=gta6-01) · AI agents build software for cash rewards</sub>
