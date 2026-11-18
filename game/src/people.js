@@ -1,127 +1,153 @@
-// Solmar Bay — pedestrians, foot police and mission enemies.
-// People are simple articulated low-poly figures that walk the sidewalks,
-// chat, flee from gunfire, and (as enemies) fight back in missions.
-import { clamp, angleLerp, dist2d, mulberry32 } from './util.js';
-import { STREETS, collideCircle } from './city.js';
+// Solmar Bay — pedestrians. They stroll the sidewalks, turn at
+// intersections, and flee from danger (gunfire, a speeding car). A
+// pedestrian run over by a fast car is knocked down for a while and counts
+// as a crime for the wanted system.
 
-const SHIRTS = [0xd84a4a, 0x4a7ad8, 0x4ad87a, 0xd8c84a, 0xd84ab0, 0x7a4ad8, 0xe8e8e8, 0x333333];
-const SKINS = [0xe8b88a, 0xc98a5a, 0x8a5a38, 0xf0c8a0];
+import { RNG, clamp, dist2 } from './util.js';
+import { PITCH, HALF } from './city.js';
 
-export function makePersonMesh(shirt, skin, police, enemy) {
-  const g = new THREE.Group();
-  const shirtMat = new THREE.MeshLambertMaterial({ color: police ? 0x1a2a4a : shirt });
-  const skinMat = new THREE.MeshLambertMaterial({ color: skin });
-  const pantsMat = new THREE.MeshLambertMaterial({ color: police ? 0x141c2e : 0x2e3a4a });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.9, 0.4), shirtMat);
-  body.position.y = 1.05; g.add(body);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), skinMat);
-  head.position.y = 1.75; g.add(head);
-  if (police) {
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.46),
-      new THREE.MeshLambertMaterial({ color: 0x0e1a30 }));
-    cap.position.y = 2.0; g.add(cap);
-  } else if (enemy) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.46),
-      new THREE.MeshLambertMaterial({ color: 0xc0392b }));
-    band.position.y = 1.95; g.add(band);
-  }
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.7, 0.3), pantsMat);
-  legL.position.set(-0.18, 0.35, 0); g.add(legL);
-  const legR = legL.clone(); legR.position.x = 0.18; g.add(legR);
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.22), shirtMat);
-  armL.position.set(-0.48, 1.1, 0); g.add(armL);
-  const armR = armL.clone(); armR.position.x = 0.48; g.add(armR);
-  g.userData = { legL, legR, armL, armR, body };
-  return g;
-}
+const SHIRTS = [0xc05050, 0x5080c0, 0x50a050, 0xc0a050, 0x8050a0, 0x909090, 0xd0d0d0];
+const SKINS = [0xe8b88a, 0xc98a5a, 0x8a5a30, 0xf0c8a0];
 
-export class Person {
-  constructor(scene, x, z, opts = {}) {
-    const rnd = mulberry32((Math.random() * 1e9) | 0);
+export class Pedestrians {
+  constructor(scene, THREE, seed) {
     this.scene = scene;
-    this.police = !!opts.police; this.enemy = !!opts.enemy;
-    this.mesh = makePersonMesh(
-      SHIRTS[Math.floor(rnd() * SHIRTS.length)],
-      SKINS[Math.floor(rnd() * SKINS.length)], this.police, this.enemy);
-    this.mesh.position.set(x, 0, z);
-    scene.add(this.mesh);
-    this.x = x; this.z = z;
-    this.heading = rnd() * Math.PI * 2;
-    this.speed = 0; this.walkPhase = rnd() * 6;
-    this.health = this.enemy ? 60 : 100;
-    this.state = opts.state || 'walk'; // walk | flee | chase | fight | dead
-    this.target = null; // {x,z} waypoint
-    this.waitT = rnd() * 2;
-    this.alive = true;
-    this.shootCd = 0;
-    this.pickTarget();
+    this.THREE = THREE;
+    this.rng = new RNG(seed);
+    this.list = [];
+    this._spawn();
   }
-  pickTarget() {
-    const s = STREETS[Math.floor(Math.random() * STREETS.length)];
-    const along = (Math.random() * 2 - 1) * 280;
-    if (Math.random() < 0.5) this.target = { x: along, z: s + 10 };
-    else this.target = { x: s + 10, z: along };
+
+  _makeMesh(shirt, skin) {
+    const g = new this.THREE.Group();
+    const body = new this.THREE.Mesh(
+      new this.THREE.CylinderGeometry(0.26, 0.3, 0.95, 8),
+      new this.THREE.MeshLambertMaterial({ color: shirt }),
+    );
+    body.position.y = 0.95;
+    g.add(body);
+    const head = new this.THREE.Mesh(
+      new this.THREE.SphereGeometry(0.26, 10, 8),
+      new this.THREE.MeshLambertMaterial({ color: skin }),
+    );
+    head.position.y = 1.62;
+    g.add(head);
+    const legMat = new this.THREE.MeshLambertMaterial({ color: 0x2a2c34 });
+    const legGeo = new this.THREE.BoxGeometry(0.16, 0.7, 0.16);
+    const legL = new this.THREE.Mesh(legGeo, legMat);
+    legL.position.set(-0.13, 0.35, 0);
+    g.add(legL);
+    const legR = new this.THREE.Mesh(legGeo, legMat);
+    legR.position.set(0.13, 0.35, 0);
+    g.add(legR);
+    return { group: g, legL, legR, head };
   }
-  update(dt, colliders, player, fleeFrom) {
-    if (!this.alive) return;
-    this.shootCd -= dt;
-    let speed = 0;
-    if (this.state === 'dead') return;
-    if (fleeFrom) {
-      const d = dist2d(this.x, this.z, fleeFrom.x, fleeFrom.z);
-      if (d < 30) {
-        this.state = 'flee';
-        const a = Math.atan2(this.x - fleeFrom.x, this.z - fleeFrom.z);
-        this.heading = angleLerp(this.heading, a, Math.min(1, dt * 6));
-        speed = 5.5;
-      } else if (this.state === 'flee') { this.state = 'walk'; this.pickTarget(); }
+
+  _spawn() {
+    for (let i = 0; i < 26; i++) {
+      const street = this.rng.pick([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      const line = -HALF + street * PITCH;
+      const along = this.rng.range(-HALF + 10, HALF - 10);
+      const axis = this.rng.pick(['x', 'z']);
+      const mesh = this._makeMesh(this.rng.pick(SHIRTS), this.rng.pick(SKINS));
+      this.scene.add(mesh.group);
+      this.list.push({
+        mesh,
+        pos: axis === 'x' ? { x: along, z: line + this.rng.pick([-7.5, 7.5]) } : { x: line + this.rng.pick([-7.5, 7.5]), z: along },
+        axis,
+        dir: this.rng.pick([-1, 1]),
+        speed: this.rng.range(1.1, 2.0),
+        phase: this.rng.range(0, Math.PI * 2),
+        flee: 0,
+        down: 0,
+      });
     }
-    if (this.state === 'chase' && player) {
-      const d = dist2d(this.x, this.z, player.x, player.z);
-      this.heading = angleLerp(this.heading, Math.atan2(player.x - this.x, player.z - this.z), Math.min(1, dt * 5));
-      speed = d > 2 ? 4.6 : 0;
-    } else if (this.state === 'fight' && player) {
-      const d = dist2d(this.x, this.z, player.x, player.z);
-      this.heading = angleLerp(this.heading, Math.atan2(player.x - this.x, player.z - this.z), Math.min(1, dt * 5));
-      speed = d > 12 ? 4 : 0;
-    } else if (this.state === 'walk' || this.state === 'flee') {
-      if (this.state === 'walk') {
-        if (!this.target) this.pickTarget();
-        const d = dist2d(this.x, this.z, this.target.x, this.target.z);
-        if (d < 3) {
-          this.waitT -= dt; speed = 0;
-          if (this.waitT <= 0) { this.pickTarget(); this.waitT = 1 + Math.random() * 3; }
-        } else {
-          this.heading = angleLerp(this.heading, Math.atan2(this.target.x - this.x, this.target.z - this.z), Math.min(1, dt * 3));
-          speed = 1.6 + Math.random() * 0.4;
-        }
+  }
+
+  // Returns the number of pedestrians newly knocked down by a fast car.
+  checkCarHit(carPos, carSpeed) {
+    let hits = 0;
+    if (carSpeed < 5) return 0;
+    for (const p of this.list) {
+      if (p.down > 0) continue;
+      if (dist2(p.pos.x, p.pos.z, carPos.x, carPos.z) < 1.8) {
+        p.down = 5;
+        p.mesh.group.rotation.z = Math.PI / 2;
+        p.mesh.group.position.y = 0.3;
+        hits++;
       }
     }
-    this.speed = speed;
-    if (speed > 0.1) {
-      const nx = this.x + Math.sin(this.heading) * speed * dt;
-      const nz = this.z + Math.cos(this.heading) * speed * dt;
-      const c = collideCircle(colliders, nx, nz, 0.6);
-      this.x = c.x; this.z = c.z;
-      this.walkPhase += dt * speed * 2.2;
-    }
-    const m = this.mesh;
-    m.position.set(this.x, 0, this.z);
-    m.rotation.y = this.heading;
-    const sw = Math.sin(this.walkPhase) * (speed > 0.1 ? 0.55 : 0);
-    m.userData.legL.rotation.x = sw; m.userData.legR.rotation.x = -sw;
-    m.userData.armL.rotation.x = -sw * 0.7; m.userData.armR.rotation.x = sw * 0.7;
-    if (this.state === 'fight' || this.state === 'chase') {
-      m.userData.armR.rotation.x = -1.4; // aiming
+    return hits;
+  }
+
+  update(dt, playerPos, dangerPos) {
+    for (const p of this.list) {
+      if (p.down > 0) {
+        p.down -= dt;
+        if (p.down <= 0) {
+          p.mesh.group.rotation.z = 0;
+          p.mesh.group.position.y = 0;
+          p.flee = 2;
+        }
+        continue;
+      }
+      let speed = p.speed;
+      let mx = 0;
+      let mz = 0;
+      // Flee from danger.
+      if (dangerPos && dist2(p.pos.x, p.pos.z, dangerPos.x, dangerPos.z) < 14) {
+        p.flee = 2;
+      }
+      if (p.flee > 0) {
+        p.flee -= dt;
+        speed = 4.2;
+        const dx = p.pos.x - (dangerPos ? dangerPos.x : playerPos.x);
+        const dz = p.pos.z - (dangerPos ? dangerPos.z : playerPos.z);
+        const d = Math.max(0.01, Math.sqrt(dx * dx + dz * dz));
+        mx = dx / d;
+        mz = dz / d;
+      } else if (p.axis === 'x') {
+        mx = p.dir;
+      } else {
+        mz = p.dir;
+      }
+      p.pos.x += mx * speed * dt;
+      p.pos.z += mz * speed * dt;
+      // Turn at intersections or city edge.
+      if (p.flee <= 0) {
+        const nearLine = (v) => {
+          for (let i = 0; i <= 10; i++) {
+            if (Math.abs(v - (-HALF + i * PITCH)) < 2) return true;
+          }
+          return false;
+        };
+        if (p.axis === 'x' && nearLine(p.pos.z) && this.rng.chance(dt * 0.5)) {
+          p.axis = 'z';
+          p.dir = this.rng.pick([-1, 1]);
+          p.pos.z = Math.round((p.pos.z + HALF) / PITCH) * PITCH - HALF + this.rng.pick([-7.5, 7.5]);
+        } else if (p.axis === 'z' && nearLine(p.pos.x) && this.rng.chance(dt * 0.5)) {
+          p.axis = 'x';
+          p.dir = this.rng.pick([-1, 1]);
+          p.pos.x = Math.round((p.pos.x + HALF) / PITCH) * PITCH - HALF + this.rng.pick([-7.5, 7.5]);
+        }
+        if (p.pos.x < -HALF + 4 || p.pos.x > HALF - 4) p.dir = p.axis === 'x' ? -p.dir : p.dir;
+        if (p.pos.z < -HALF + 4 || p.pos.z > HALF - 4) p.dir = p.axis === 'z' ? -p.dir : p.dir;
+        p.pos.x = clamp(p.pos.x, -HALF + 2, HALF - 2);
+        p.pos.z = clamp(p.pos.z, -HALF + 2, HALF - 2);
+      }
+      // Animate walk + face movement direction.
+      p.phase += dt * speed * 3.2;
+      const swing = Math.sin(p.phase) * 0.55;
+      p.mesh.legL.rotation.x = swing;
+      p.mesh.legR.rotation.x = -swing;
+      p.mesh.group.position.set(p.pos.x, p.mesh.group.position.y, p.pos.z);
+      const heading = Math.atan2(mx, mz);
+      if (mx !== 0 || mz !== 0) {
+        let d = heading - p.mesh.group.rotation.y;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        p.mesh.group.rotation.y += d * Math.min(1, dt * 8);
+      }
     }
   }
-  damage(amount) {
-    this.health -= amount;
-    if (this.health <= 0 && this.alive) {
-      this.alive = false; this.state = 'dead';
-      this.mesh.rotation.z = Math.PI / 2; this.mesh.position.y = 0.3;
-    }
-    return !this.alive;
-  }
-  dispose() { this.scene.remove(this.mesh); }
 }

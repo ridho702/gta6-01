@@ -1,192 +1,362 @@
-// Solmar Bay — story missions. Six jobs for Marlow's crew, each a chain of
-// stages (go to, steal, deliver, fight, hold, escape) with dialogue and pay.
-import { LANDMARKS } from './city.js';
+// Solmar Bay — the story. Six missions, played in order, each with stages,
+// dialogue, a beacon marking the target, timers, and a cash reward. Dana
+// Reyes is back in Solmar Bay with $250 and a debt to Marlow, and works it
+// off one job at a time.
 
-export const MISSIONS = [
-  {
-    id: 'fresh-start', title: '1 · FRESH START', pay: 300,
-    brief: 'Marlow is waiting at Marina Plaza. Go and hear him out.',
-    dialogue: [
-      ['MARLOW', "Dana Reyes. Back in Solmar Bay at last. You owe me, kid — but I like your style. Run a few jobs, we'll call it even."],
-      ['DANA', 'One job at a time, old man. What have you got?'],
-    ],
-    stages: [
-      { type: 'goto', target: LANDMARKS.plaza, label: 'Meet Marlow at Marina Plaza', radius: 8 },
-    ],
-  },
-  {
-    id: 'hot-wheels', title: '2 · HOT WHEELS', pay: 600,
-    brief: 'A gold Comet Coupe is parked by Palms Mall. Steal it and bring it to the garage.',
-    dialogue: [
-      ['MARLOW', "A client wants a gold Comet Coupe. One is parked outside Palms Mall. Take it — quietly. Then bring it to my garage."],
-    ],
-    stages: [
-      { type: 'steal', target: LANDMARKS.mall, label: 'Steal the gold Comet Coupe', radius: 6, carModel: 0 },
-      { type: 'deliver', target: LANDMARKS.garage, label: 'Deliver the coupe to the garage', radius: 10, needCar: true },
-    ],
-  },
-  {
-    id: 'courier-run', title: '3 · COURIER RUN', pay: 800,
-    brief: 'Pick up the package at the docks and deliver it to the airfield — fast. 150 seconds.',
-    dialogue: [
-      ['MARLOW', "Package at Fisherman Docks. Airfield buyer, cash on delivery. You've got 150 seconds — the buyer does not wait."],
-    ],
-    stages: [
-      { type: 'goto', target: LANDMARKS.docks, label: 'Pick up the package at the docks', radius: 8 },
-      { type: 'deliver', target: LANDMARKS.airport, label: 'Deliver the package to the airfield', radius: 10, time: 150 },
-    ],
-  },
-  {
-    id: 'dockside-trouble', title: '4 · DOCKSIDE TROUBLE', pay: 1200,
-    brief: 'The Vultures jumped our crew at the docks. Clear them out.',
-    dialogue: [
-      ['MARLOW', 'The Vultures are muscling in on my docks. Four of them, armed. Go remind them whose pier this is.'],
-      ['DANA', 'Loud and clear.'],
-    ],
-    stages: [
-      { type: 'kill', target: LANDMARKS.docks, label: 'Take out the Vultures at the docks (0/4)', radius: 26, count: 4, spawnEnemies: 4 },
-    ],
-  },
-  {
-    id: 'the-getaway', title: '5 · THE GETAWAY', pay: 1500,
-    brief: 'The Bay Police are onto the crew. Lose a 3-star wanted level, then reach the safehouse.',
-    dialogue: [
-      ['MARLOW', "Cops are crawling all over the crew, Dana. Make some noise, lose them, and get to the safehouse. Don't get caught."],
-    ],
-    stages: [
-      { type: 'escape', target: LANDMARKS.safehouse, label: 'Reach 3 stars, then lose the police', radius: 10, wantStars: 3 },
-    ],
-  },
-  {
-    id: 'the-big-score', title: '6 · THE BIG SCORE', pay: 5000,
-    brief: 'Rob Bay Trust Bank: hold E at the vault, then escape the 4-star heat to the pier boat.',
-    dialogue: [
-      ['MARLOW', "This is the one, Dana. Bay Trust Bank. Crack the vault, grab the cash, and don't stop till you hit the pier boat."],
-      ['DANA', 'After this, we are even. All of it.'],
-    ],
-    stages: [
-      { type: 'goto', target: LANDMARKS.bank, label: 'Get to Bay Trust Bank', radius: 10 },
-      { type: 'hold', target: LANDMARKS.bank, label: 'Hold E to crack the vault', radius: 8, holdTime: 6 },
-      { type: 'escape', target: LANDMARKS.pier, label: 'Escape to the pier boat — lose the heat', radius: 10, wantStars: 4 },
-    ],
-  },
-];
+import { dist2 } from './util.js';
 
-export class MissionManager {
+const DIALOGUE_TIME = 5; // seconds before a line advances on its own
+
+export class Missions {
   constructor(game) {
     this.game = game;
-    this.index = 0;
+    this.THREE = game.THREE;
+    this.scene = game.scene;
+    this.state = 'idle'; // idle | active | done
+    this.idx = 0;
     this.stage = 0;
-    this.active = false;
-    this.stageTimer = 0;
+    this.timeLeft = 0;
     this.holdProgress = 0;
-    this.kills = 0;
-    this.enemiesSpawned = false;
-    this.escaped = false;
+    this.dialogue = [];
+    this.dialogueIdx = 0;
+    this.dialogueTimer = 0;
+    this.starterCar = null;
+    this.caseMesh = null;
+    this._buildBeacon();
+    this.defs = this._defs();
   }
-  get mission() { return MISSIONS[this.index]; }
-  get stageDef() { return this.mission ? this.mission.stages[this.stage] : null; }
-  get done() { return this.index >= MISSIONS.length; }
-  start(index) {
-    this.index = index; this.stage = 0; this.active = true;
-    this.stageTimer = 0; this.holdProgress = 0; this.kills = 0; this.enemiesSpawned = false;
-    this.escaped = false;
-    const m = this.mission;
-    this.game.dialogueQueue = [];
-    this.game.showToast(m.title);
-    this.game.sayLines(m.dialogue);
-    this.game.sound.mission();
-    this.game.hud.setObjective(m.stages[0].label, m.title);
+
+  _buildBeacon() {
+    const mat = new this.THREE.MeshBasicMaterial({
+      color: 0xffd21f,
+      transparent: true,
+      opacity: 0.28,
+      side: this.THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.beacon = new this.THREE.Mesh(new this.THREE.CylinderGeometry(3, 3, 42, 20, 1, true), mat);
+    this.beacon.visible = false;
+    this.scene.add(this.beacon);
+    const ring = new this.THREE.Mesh(
+      new this.THREE.RingGeometry(2.4, 3.4, 32),
+      new this.THREE.MeshBasicMaterial({ color: 0xffd21f, transparent: true, opacity: 0.8, side: this.THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    this.beaconRing = ring;
+    ring.visible = false;
+    this.scene.add(ring);
+    // The briefcase for the final mission.
+    this.caseMesh = new this.THREE.Mesh(
+      new this.THREE.BoxGeometry(1.1, 0.8, 0.35),
+      new this.THREE.MeshLambertMaterial({ color: 0xd8a020, emissive: 0x6a4a00 }),
+    );
+    this.caseMesh.visible = false;
+    this.scene.add(this.caseMesh);
   }
-  startNext() {
-    if (this.index + 1 >= MISSIONS.length) { this.active = false; this.game.storyComplete(); return; }
-    this.start(this.index + 1);
+
+  _defs() {
+    const L = this.game.city.landmarks;
+    return [
+      {
+        name: 'Fresh Start',
+        intro: [
+          { name: 'Marlow', text: 'Dana Reyes. Back in Solmar Bay after five years, and you still owe me $250.' },
+          { name: 'Dana', text: 'I just got here, Marlow. Give me a day.' },
+          { name: 'Marlow', text: "A day? Fine. But you work it off. Come to my garage first — then take my old sedan to the paint shop." },
+        ],
+        stages: [
+          { type: 'goto', target: L.garage, radius: 7, text: 'Go to Marlow\u2019s garage' },
+          { type: 'enterCar', target: L.garage, radius: 9, text: 'Get in Marlow\u2019s car (press E)' },
+          { type: 'deliver', target: L.paintShop, radius: 9, text: 'Deliver the sedan to the paint shop' },
+        ],
+        reward: 150,
+      },
+      {
+        name: 'Hot Wheels',
+        intro: [
+          { name: 'Marlow', text: 'A client wants a Comet GT — red, parked near the east blocks. Bring it here. No questions.' },
+          { name: 'Dana', text: 'That is stealing, Marlow.' },
+          { name: 'Marlow', text: 'That is business.' },
+        ],
+        stages: [
+          { type: 'goto', target: { x: 86, z: -96 }, radius: 8, text: 'Find the red Comet GT' },
+          { type: 'steal', target: { x: 86, z: -96 }, radius: 6, text: 'Steal the Comet GT (press E)' },
+          { type: 'deliver', target: L.garage, radius: 9, time: 120, text: 'Deliver the Comet GT to the garage' },
+        ],
+        reward: 400,
+      },
+      {
+        name: 'Courier Run',
+        intro: [
+          { name: 'Marlow', text: 'Three packages, three stops. Mall, hospital, docks. 150 seconds. The buyers do not wait.' },
+        ],
+        stages: [
+          { type: 'deliver', target: L.mall, radius: 8, time: 150, text: 'Drop 1 of 3: the mall' },
+          { type: 'deliver', target: L.hospital, radius: 8, text: 'Drop 2 of 3: the hospital' },
+          { type: 'deliver', target: L.docks, radius: 8, text: 'Drop 3 of 3: the docks' },
+        ],
+        reward: 600,
+      },
+      {
+        name: 'Dockside Trouble',
+        intro: [
+          { name: 'Marlow', text: 'The Vultures are shaking down my docks. Go remind them who runs this town.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.docks, radius: 12, text: 'Go to the docks' },
+          { type: 'kill', target: L.docks, radius: 20, text: 'Take out the Vultures' },
+          { type: 'goto', target: L.garage, radius: 8, text: 'Report back to Marlow' },
+        ],
+        reward: 800,
+      },
+      {
+        name: 'The Getaway',
+        intro: [
+          { name: 'Marlow', text: 'The bank vault. Five seconds on the drill and we are rich. The cops will come — drive fast.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.bank, radius: 10, text: 'Go to Solmar Bank' },
+          { type: 'hold', target: L.bank, radius: 12, text: 'Crack the vault (hold E)' },
+          { type: 'escape', target: L.safehouse, radius: 9, time: 180, text: 'Escape to the safehouse' },
+        ],
+        reward: 1000,
+      },
+      {
+        name: 'The Big Score',
+        intro: [
+          { name: 'Marlow', text: 'One last job, Dana. The case is at the airfield. The whole city is going to want it. Make it to the pier and we are done.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.airfield, radius: 14, text: 'Go to the airfield' },
+          { type: 'kill', target: L.airfield, radius: 24, text: 'Clear the airfield crew' },
+          { type: 'grab', target: L.airfield, radius: 5, text: 'Grab the case (press E)' },
+          { type: 'escape', target: L.pier, radius: 9, text: 'Escape to the pier' },
+        ],
+        reward: 5000,
+      },
+    ];
   }
-  currentTarget() {
-    const s = this.stageDef;
-    return s ? s.target : null;
+
+  current() {
+    return this.defs[this.idx];
   }
-  // Called every frame; returns true when a stage just completed.
-  update(dt, game) {
-    if (!this.active || !this.mission) return;
-    const s = this.stageDef;
-    if (!s) return;
-    const p = game.playerPos();
-    const d = Math.hypot(p.x - s.target.x, p.z - s.target.z);
-    if (s.type === 'kill' && !this.enemiesSpawned) {
-      this.enemiesSpawned = true;
-      game.spawnMissionEnemies(s.target, s.count);
-    }
-    if (s.type === 'escape') {
-      if (!this.escaped && game.wanted.stars >= s.wantStars) {
-        this.escaped = true;
-        game.showToast('HEAT IS ON — LOSE THE POLICE');
-        game.say([['MARLOW', 'Now lose them! Get out of sight and let the heat die down.']]);
-      }
-      if (this.escaped && game.wanted.stars === 0 && d < s.radius) this.completeStage(game);
-      return;
-    }
-    if (s.type === 'hold') {
-      if (d < s.radius && game.input.keys['KeyE']) {
-        this.holdProgress += dt;
-        game.hud.setObjective(`Cracking the vault… ${Math.ceil(s.holdTime - this.holdProgress)}s (hold E)`);
-        if (this.holdProgress >= s.holdTime) {
-          game.wanted.addHeat(4, 'Bank robbery!');
-          this.completeStage(game);
-        }
-      } else {
-        this.holdProgress = Math.max(0, this.holdProgress - dt * 0.5);
-        game.hud.setObjective(s.label);
-      }
-      return;
-    }
-    if (s.type === 'steal') {
-      if (game.missionCar && game.missionCar.stolen) { this.completeStage(game); return; }
-      game.hud.setObjective(s.label);
-      return;
-    }
-    if (s.type === 'deliver') {
-      if (s.time) {
-        this.stageTimer += dt;
-        const left = Math.max(0, Math.ceil(s.time - this.stageTimer));
-        game.hud.setObjective(`${s.label} — ${left}s left`);
-        if (this.stageTimer > s.time) {
-          game.showToast('TOO SLOW — JOB FAILED');
-          game.say([['MARLOW', 'The buyer walked. We will try again — head back to the docks.']]);
-          this.stage = 0; this.stageTimer = 0; this.enemiesSpawned = false;
-          game.hud.setObjective(this.stageDef.label);
-          return;
-        }
-      }
-      if (d < s.radius && (!s.needCar || game.inCar)) this.completeStage(game);
-      return;
-    }
-    // goto / kill (kill completes via kills counter)
-    if (s.type === 'goto' && d < s.radius) this.completeStage(game);
-    if (s.type === 'kill') {
-      game.hud.setObjective(`Take out the Vultures at the docks (${this.kills}/${s.count})`);
-      if (this.kills >= s.count) this.completeStage(game);
+
+  currentStage() {
+    const m = this.current();
+    return m ? m.stages[this.stage] : null;
+  }
+
+  startMission(i) {
+    this.idx = i;
+    this.stage = 0;
+    this.state = 'active';
+    this.holdProgress = 0;
+    this.game.combat.clearEnemies();
+    this.caseMesh.visible = false;
+    const m = this.current();
+    this._say(m.intro);
+    this._beginStage();
+  }
+
+  start() {
+    this.startMission(this.idx);
+  }
+
+  _say(lines) {
+    this.dialogue = lines;
+    this.dialogueIdx = 0;
+    this.dialogueTimer = 0;
+    if (lines.length > 0) {
+      this.game.hud.showDialogue(lines[0].name, lines[0].text);
+      if (this.game.audio) this.game.audio.blip();
     }
   }
-  onKill() {
-    this.kills++;
-    const s = this.stageDef;
-    if (s && s.type === 'kill') this.game.hud.setObjective(`Take out the Vultures at the docks (${this.kills}/${s.count})`);
-  }
-  completeStage(game) {
-    game.sound.cash();
-    const m = this.mission;
-    this.stage++;
-    this.stageTimer = 0; this.holdProgress = 0;
-    if (this.stage >= m.stages.length) {
-      game.cash += m.pay;
-      game.showToast(`JOB DONE — +$${m.pay}`);
-      game.say([['MARLOW', `Clean work, Dana. $${m.pay} is yours. ${this.index + 1 < MISSIONS.length ? 'Next job is waiting.' : 'That was the last one — Solmar Bay is yours.'}`]]);
-      game.saveGame();
-      this.startNext();
+
+  _beginStage() {
+    const st = this.currentStage();
+    if (!st) return;
+    this.timeLeft = st.time || 0;
+    this.holdProgress = 0;
+    // Stage-specific setup.
+    if (this.idx === 0 && this.stage === 1 && !this.starterCar) {
+      const g = this.game.city.landmarks.garage;
+      this.starterCar = this.game.player.spawnStarterCar(g.x + 10, g.z + 14, Math.PI / 2);
+    }
+    if (this.idx === 3 && this.stage === 1) {
+      const d = this.game.city.landmarks.docks;
+      const spots = [[-14, -6], [10, 4], [-4, 12], [14, -12]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(d.x + dx, d.z + dz);
+    }
+    if (this.idx === 5 && this.stage === 1) {
+      const a = this.game.city.landmarks.airfield;
+      const spots = [[-30, -8], [30, 6], [-10, 14], [18, -16], [-34, 10], [34, -4]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(a.x + dx, a.z + dz);
+    }
+    if (this.idx === 5 && this.stage === 2) {
+      const a = this.game.city.landmarks.airfield;
+      this.caseMesh.position.set(a.x, 1.0, a.z + 4);
+      this.caseMesh.visible = true;
+    }
+    const t = st.target;
+    if (t) {
+      this.beacon.position.set(t.x, 21, t.z);
+      this.beaconRing.position.set(t.x, 0.15, t.z);
+      this.beacon.visible = true;
+      this.beaconRing.visible = true;
     } else {
-      game.hud.setObjective(m.stages[this.stage].label);
-      game.showToast('OBJECTIVE UPDATED');
+      this.beacon.visible = false;
+      this.beaconRing.visible = false;
     }
+  }
+
+  _advanceStage() {
+    this.stage++;
+    const m = this.current();
+    if (this.stage >= m.stages.length) {
+      this._completeMission();
+    } else {
+      this._beginStage();
+    }
+  }
+
+  _completeMission() {
+    const m = this.current();
+    this.game.player.cash += m.reward;
+    this.game.hud.toast('Mission complete: ' + m.name + '  +$' + m.reward.toLocaleString('en-US'));
+    if (this.game.audio) this.game.audio.cash();
+    this.beacon.visible = false;
+    this.beaconRing.visible = false;
+    this.caseMesh.visible = false;
+    this.idx++;
+    if (this.idx >= this.defs.length) {
+      this.state = 'done';
+      this.game.hud.showOverlay('complete');
+      this.game.onStoryComplete();
+    } else {
+      this.startMission(this.idx);
+    }
+    this.game.saveNow();
+  }
+
+  _failMission(reason) {
+    this.game.hud.toast('Mission failed: ' + reason + ' — try again');
+    this.game.police.clear();
+    this.startMission(this.idx);
+  }
+
+  // HUD reads this every frame.
+  objective() {
+    if (this.state !== 'active') {
+      return this.state === 'done'
+        ? { text: 'Free roam — Solmar Bay is yours', target: null }
+        : { text: 'Press Start to begin the story', target: null };
+    }
+    const st = this.currentStage();
+    let text = this.current().name + ': ' + st.text;
+    if (st.type === 'kill') {
+      const left = this.game.combat.livingEnemies().length;
+      text += '  (' + left + ' left)';
+    }
+    if (st.type === 'hold' && this.holdProgress > 0) {
+      text += '  ' + Math.ceil(this.holdProgress) + 's / 5s';
+    }
+    if (this.timeLeft > 0) {
+      text += '  [' + Math.ceil(this.timeLeft) + 's]';
+    }
+    return { text, target: st.target || null };
+  }
+
+  update(dt) {
+    if (this.state !== 'active') return;
+    const game = this.game;
+    const input = game.input;
+    const player = game.player;
+    // Dialogue first: E advances, or it advances on its own.
+    if (this.dialogueIdx < this.dialogue.length) {
+      this.dialogueTimer += dt;
+      if (input.wasPressed('KeyE') || this.dialogueTimer > DIALOGUE_TIME) {
+        this.dialogueIdx++;
+        this.dialogueTimer = 0;
+        if (this.dialogueIdx < this.dialogue.length) {
+          const line = this.dialogue[this.dialogueIdx];
+          game.hud.showDialogue(line.name, line.text);
+          if (game.audio) game.audio.blip();
+        } else {
+          game.hud.hideDialogue();
+        }
+      }
+      return; // stages wait while anyone is talking
+    }
+    const st = this.currentStage();
+    if (!st) return;
+    if (this.timeLeft > 0) {
+      this.timeLeft -= dt;
+      if (this.timeLeft <= 0) {
+        this._failMission('out of time');
+        return;
+      }
+    }
+    const pp = player.getPos();
+    const target = st.target;
+    switch (st.type) {
+      case 'goto':
+      case 'deliver':
+      case 'escape': {
+        if (target && dist2(pp.x, pp.z, target.x, target.z) < st.radius) {
+          if (st.type === 'escape') game.police.clear();
+          this._advanceStage();
+        }
+        break;
+      }
+      case 'enterCar': {
+        if (player.mode === 'car') this._advanceStage();
+        break;
+      }
+      case 'steal': {
+        const sport = game.traffic.parked.find((p) => p.sport && !p.taken);
+        if (sport && dist2(pp.x, pp.z, sport.pos.x, sport.pos.z) < 5 && input.wasPressed('KeyE')) {
+          player.enterCar(sport);
+          game.police.addHeat(25);
+          game.hud.toast('Stolen! The cops are coming.');
+          this._advanceStage();
+        }
+        break;
+      }
+      case 'kill': {
+        if (game.combat.allDead()) this._advanceStage();
+        break;
+      }
+      case 'hold': {
+        const near = target && dist2(pp.x, pp.z, target.x, target.z) < st.radius;
+        if (near && input.isDown('KeyE')) {
+          this.holdProgress += dt;
+          if (this.holdProgress >= 5) {
+            player.cash += 1500;
+            game.police.addHeat(95);
+            game.hud.toast('Vault cracked! +$1,500 — run!');
+            if (game.audio) game.audio.explosion();
+            this._advanceStage();
+          }
+        } else {
+          this.holdProgress = Math.max(0, this.holdProgress - dt * 2);
+        }
+        break;
+      }
+      case 'grab': {
+        const a = game.city.landmarks.airfield;
+        if (dist2(pp.x, pp.z, a.x, a.z + 4) < 4 && input.wasPressed('KeyE')) {
+          this.caseMesh.visible = false;
+          game.police.addHeat(190);
+          game.hud.toast('Case grabbed! Every cop in the city is coming.');
+          this._advanceStage();
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    // Beacon pulse.
+    const pulse = 0.22 + 0.1 * Math.sin(performance.now() * 0.004);
+    this.beacon.material.opacity = pulse;
   }
 }

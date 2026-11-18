@@ -1,78 +1,88 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — Open World Crime Game</title>
-<link rel="stylesheet" href="./style.css">
+<title>Solmar Bay — a GTA 6-style open-world game</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app">
-  <canvas id="scene"></canvas>
-  <div id="hud" class="hidden">
-    <div id="topbar">
-      <div id="clock">☀ 09:12</div>
-      <div id="wanted"></div>
-      <div id="cash">$<span id="cashVal">250</span></div>
-    </div>
-    <div id="healthbar"><div id="healthFill"></div><span id="healthText">100</span></div>
-    <div id="missionBox">
-      <div id="missionTitle">SOLMAR BAY</div>
-      <div id="objective">—</div>
-      <div id="objectiveDist"></div>
-    </div>
-    <div id="toast"></div>
-    <div id="dialogue" class="hidden"><span id="speaker"></span><span id="dialogueText"></span></div>
-    <div id="speedo" class="hidden"><span id="speedVal">0</span><small>mph</small><div id="carName"></div></div>
-    <div id="crosshair" class="hidden">+</div>
-    <div id="hint"></div>
-    <canvas id="minimap" width="220" height="220"></canvas>
-    <div id="controlsHelp">WASD move/drive · E enter/exit car · LMB shoot · F punch · Shift sprint · Space handbrake · C camera · P pause · M mute</div>
-    <div id="message"></div>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="hud-top-left">
+    <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
+    <div id="hud-cash-row"><span id="hud-cash">$250</span><span id="hud-ammo">Ammo 48</span></div>
   </div>
-  <div id="startScreen">
-    <div class="titleBlock">
-      <div class="logo">SOLMAR<span>BAY</span></div>
-      <div class="tagline">Sun. Sand. Sirens. — an original open-world crime game</div>
-      <div class="story">Dana Reyes is back in Solmar Bay with $250 and a debt to Marlow.
-        Steal cars, outrun the Bay Police, run jobs for the crew — and take the city for yourself.</div>
-      <button id="playBtn">▶ &nbsp;START GAME</button>
-      <button id="continueBtn" class="hidden">CONTINUE — saved game</button>
-      <div class="menuRow">
-        <button id="howBtn">HOW TO PLAY</button>
-        <button id="muteBtn">SOUND: ON</button>
-      </div>
-      <div id="howPanel" class="hidden">
-        <b>ON FOOT</b> — WASD move, Shift sprint, E get in a car, LMB shoot (pistol), F punch, drag mouse to look.<br>
-        <b>DRIVING</b> — W/S accelerate &amp; brake, A/D steer, Space handbrake, E leave car, H horn.<br>
-        <b>WANTED</b> — crimes raise your stars. Lose the police, or get busted / wasted and pay the price.<br>
-        <b>MISSIONS</b> — follow the yellow marker. Finish jobs to earn cash and unlock the story.<br>
-        <b>SAVE</b> — progress auto-saves after every mission; P pauses (save / resume / restart).
-      </div>
-      <div class="credits">Original game — city, characters, story, art &amp; music made for this entry. No real-world brands.</div>
-    </div>
+  <div id="hud-top-right">
+    <div id="hud-clock">08:00</div>
+    <div id="hud-stars">☆☆☆☆☆</div>
   </div>
-  <div id="pauseMenu" class="hidden">
-    <div class="panel">
-      <h2>PAUSED</h2>
-      <button id="resumeBtn">RESUME</button>
-      <button id="saveBtn">SAVE GAME</button>
-      <button id="restartBtn">RESTART STORY</button>
-      <button id="quitBtn">BACK TO TITLE</button>
-      <div id="saveNote"></div>
-      <div class="stats" id="pauseStats"></div>
-    </div>
+  <div id="hud-bottom-center">
+    <div id="hud-objective">Press Start to begin the story</div>
+    <div id="hud-dist"></div>
   </div>
-  <div id="endScreen" class="hidden">
-    <div class="panel">
-      <h2 id="endTitle">WASTED</h2>
-      <p id="endText"></p>
-      <button id="endBtn">RESPAWN</button>
-    </div>
+  <div id="hud-bottom-right">
+    <canvas id="hud-minimap" width="180" height="180"></canvas>
+    <div id="hud-speed">0 km/h</div>
   </div>
-  <div id="errlog" style="display:none"></div>
+  <div id="hud-dialogue" style="display:none">
+    <div id="hud-dialogue-name"></div>
+    <div id="hud-dialogue-text"></div>
+  </div>
+  <div id="hud-toast" style="display:none"></div>
 </div>
-<script src="./vendor/three.min.js"></script>
-<script type="module" src="./src/main.js"></script>
+
+<div id="screen-start" class="screen" style="display:none">
+  <div class="panel">
+    <h1>SOLMAR BAY</h1>
+    <p class="tagline">An open-world crime story in a sun-soaked coastal city.</p>
+    <p>Dana Reyes is back in Solmar Bay with $250 and a debt to Marlow.
+    Six jobs stand between Dana and freedom — steal cars, run couriers,
+    crack a vault, and make the final escape to the pier.</p>
+    <p class="controls">WASD move / drive &nbsp;·&nbsp; Shift sprint &nbsp;·&nbsp; E enter car / interact
+    &nbsp;·&nbsp; Mouse drag: camera &nbsp;·&nbsp; Click: shoot &nbsp;·&nbsp; F punch
+    &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; H horn &nbsp;·&nbsp; C camera &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</p>
+    <button id="btn-start">Start Story</button>
+    <button id="btn-continue">Continue</button>
+  </div>
+</div>
+
+<div id="screen-pause" class="screen" style="display:none">
+  <div class="panel">
+    <h1>PAUSED</h1>
+    <p>Your progress is saved.</p>
+    <button id="btn-resume">Resume</button>
+  </div>
+</div>
+
+<div id="screen-wasted" class="screen" style="display:none">
+  <div class="panel">
+    <h1>WASTED</h1>
+    <p>Dana wakes up at the hospital, half the cash gone.</p>
+    <button id="btn-respawn">Respawn</button>
+  </div>
+</div>
+
+<div id="screen-busted" class="screen" style="display:none">
+  <div class="panel">
+    <h1>BUSTED</h1>
+    <p>The Solmar Bay police take their cut. $100 fine.</p>
+    <button id="btn-respawn-busted">Respawn</button>
+  </div>
+</div>
+
+<div id="screen-complete" class="screen" style="display:none">
+  <div class="panel">
+    <h1>THE BIG SCORE</h1>
+    <p>Dana made it to the pier with the case. The debt is paid —
+    Solmar Bay is yours now. Free roam unlocked.</p>
+    <button id="btn-keep-playing">Keep Playing</button>
+    <button id="btn-new-game">New Game</button>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

@@ -1,117 +1,122 @@
-// Solmar Bay — debug autopilot (?demo=1 / ?shot=N) used for screenshots and
-// play-testing: drives itself, starts a police chase, runs a mission.
-// Never runs unless the URL asks for it.
-import { LANDMARKS, nearestStreet } from './city.js';
-import { Car, CAR_MODELS } from './vehicles.js';
+// Solmar Bay — autopilot and self-test hooks, driven by URL query params.
+// ?shot=1..4 stages a fixed scene for screenshots, ?demo=1 runs a slow
+// camera orbit over the living city, ?selftest=1 records a checks object on
+// window.__selftest. These paths also skip the start menu so headless
+// Chrome can capture the game without a click.
 
-export class Autopilot {
-  constructor(game) {
-    this.game = game;
-    this.enabled = false;
-    this.mode = 'drive';
-    this.preset = null;
+import { dist2 } from './util.js';
+
+function clearDialogue(game) {
+  game.missions.dialogue = [];
+  game.missions.dialogueIdx = 0;
+  game.hud.hideDialogue();
+}
+
+function putPlayerInCar(game, x, z, angle, speed) {
+  const rec = game.player.spawnStarterCar(x, z, angle);
+  game.player.enterCar(rec);
+  if (game.player.car) game.player.car.speed = speed;
+  game.camYaw = angle + Math.PI; // camera behind the car
+  game.camDist = 13;
+}
+
+export function applyAutopilot(game) {
+  const params = new URLSearchParams(window.location.search);
+  const shot = params.get('shot');
+  const demo = params.get('demo') === '1';
+  const selftest = params.get('selftest') === '1';
+  if (!shot && !demo && !selftest) return { shot: null, demo: false, selftest: false };
+
+  // Skip the menu: straight into the world.
+  game.startGame({ silent: true });
+
+  if (demo) {
+    game.demoOrbit = true;
+    game.player.pos.x = 0;
+    game.player.pos.z = -20;
+    game.player.angle = Math.PI;
+    return { shot: null, demo: true, selftest };
   }
-  configure(params) {
-    const demo = params.get('demo');
-    const shot = params.get('shot');
-    if (shot) {
-      this.enabled = true; this.preset = shot;
-      this.applyShot(shot);
-      return;
-    }
-    if (demo === '1') {
-      this.enabled = true; this.mode = 'drive';
-      const g = this.game;
-      g.startGame(true);
-      // jump into the nearest car and head for the mission marker
-      g.enterNearestCar(true);
-      g.missions.start(1);
-    }
-  }
-  applyShot(shot) {
-    const g = this.game;
-    g.startGame(true);
-    if (shot === '1') {
-      // On foot downtown, mid-mission, pedestrians + traffic around.
-      g.player.x = 30; g.player.z = 30; g.player.heading = Math.PI * 0.8;
-      g.camYaw = g.player.heading;
-      g.missions.start(0);
-      g.missions.stage = 0;
-    } else if (shot === '2') {
-      // Driving fast through the city: snap the car onto the nearest
-      // intersection so it starts on the road, heading along a street.
-      g.player.x = -90; g.player.z = 90;
-      g.enterNearestCar(true);
-      if (g.playerCar) {
-        g.playerCar.x = nearestStreet(g.playerCar.x); g.playerCar.z = nearestStreet(g.playerCar.z);
-        g.playerCar.mesh.position.set(g.playerCar.x, 0, g.playerCar.z);
-        g.playerCar.heading = 0; g.playerCar.speed = 14; // first leg runs north along the street
+
+  if (shot === '1') {
+    // Police chase: the player fleeing up the central avenue, four stars.
+    // Heat 185 stays at four stars after a few seconds of cool-off.
+    putPlayerInCar(game, 0, 120, Math.PI, 24);
+    game.police.addHeat(185);
+    game.police._spawnTimer = 0;
+    game.missions.startMission(4);
+    clearDialogue(game);
+    // A three-quarter camera angle so the chasing police read in frame.
+    game.camYaw = 0.55;
+  } else if (shot === '2') {
+    // City driving: cruising east on a cross street, no heat.
+    putPlayerInCar(game, -120, 0, Math.PI / 2, 22);
+    game.missions.startMission(1);
+    clearDialogue(game);
+    game.camYaw = -Math.PI / 2;
+  } else if (shot === '3') {
+    // On foot downtown, looking up the avenue toward the bank tower.
+    game.player.pos.x = 0;
+    game.player.pos.z = -20;
+    game.player.angle = Math.PI;
+    game.camYaw = 0.45;
+    game.camDist = 8;
+    game.missions.startMission(0);
+    clearDialogue(game);
+  } else if (shot === '4') {
+    // Docks shootout: Vultures closing in, one star on the board.
+    const d = game.city.landmarks.docks;
+    game.player.pos.x = d.x - 18;
+    game.player.pos.z = d.z + 6;
+    game.player.angle = Math.PI / 2;
+    game.camYaw = -Math.PI / 2 + 0.5;
+    game.camDist = 10;
+    game.missions.startMission(3);
+    game.missions.stage = 1;
+    game.missions._beginStage();
+    clearDialogue(game);
+    game.police.addHeat(25);
+    // Fire one shot toward the nearest Vulture for a live tracer.
+    const enemies = game.combat.livingEnemies();
+    if (enemies.length > 0) {
+      let best = enemies[0];
+      let bestD = Infinity;
+      for (const e of enemies) {
+        const dd = dist2(game.player.pos.x, game.player.pos.z, e.pos.x, e.pos.z);
+        if (dd < bestD) {
+          bestD = dd;
+          best = e;
+        }
       }
-      g.missions.start(1);
-    } else if (shot === '3') {
-      // Wanted police chase in a car.
-      g.player.x = 0; g.player.z = -30;
-      g.enterNearestCar(true);
-      if (g.playerCar) {
-        g.playerCar.x = nearestStreet(g.playerCar.x); g.playerCar.z = nearestStreet(g.playerCar.z);
-        g.playerCar.mesh.position.set(g.playerCar.x, 0, g.playerCar.z);
-        g.playerCar.heading = 0; g.playerCar.speed = 20;
-      }
-      g.wanted.addHeat(60, '');
-      g.missions.start(4);
-      g.missions.escaped = true;
-      // Two police cars right behind the player so the chase is in frame.
-      for (const [ox, oz] of [[-8, -26], [8, -30]]) {
-        const pc = new Car(g.scene, CAR_MODELS[1], g.player.x + ox, g.player.z + oz, 0, true);
-        pc.police = true; pc.chase = true;
-        g.wanted.policeCars.push(pc);
-      }
-      g.sound.setSiren(true);
-    } else if (shot === '4') {
-      // Mission shootout at the docks — close enough to see the Vultures.
-      g.player.x = LANDMARKS.docks.x + 13; g.player.z = LANDMARKS.docks.z - 9;
-      g.player.heading = Math.atan2(LANDMARKS.docks.x - g.player.x, LANDMARKS.docks.z - g.player.z);
-      g.camYaw = g.player.heading;
-      g.missions.start(3);
-      g.missions.update(0.01, g);
-      g.wanted.addHeat(20, '');
+      const o = { x: game.player.pos.x, y: 1.5, z: game.player.pos.z };
+      const dir = { x: best.pos.x - o.x, y: 0, z: best.pos.z - o.z };
+      const len = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
+      dir.x /= len;
+      dir.z /= len;
+      game.combat.shoot(o, dir, 60, enemies);
     }
-    this.mode = shot === '3' || shot === '2' ? 'drive' : 'stand';
   }
-  // Steer the player car toward the current mission target, following the
-  // street grid (align to a street, cruise along it, turn, final approach)
-  // so the car never ploughs through a city block.
-  update(dt) {
-    if (!this.enabled) return;
-    const g = this.game;
-    if (this.mode === 'stand') return;
-    if (!g.inCar) { g.enterNearestCar(true); return; }
-    const car = g.playerCar;
-    const t = g.missions.currentTarget() || LANDMARKS.plaza;
-    const wp = this.streetWaypoint(car, t);
-    const wantHeading = Math.atan2(wp.x - car.x, wp.z - car.z);
-    let steer = (wantHeading - car.heading + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-    const sharp = Math.abs(steer) > 1.0;
-    steer = Math.max(-1, Math.min(1, steer * 1.6));
-    const d = Math.hypot(t.x - car.x, t.z - car.z);
-    // Unstuck: if wedged, reverse briefly.
-    this.stuckT = Math.abs(car.speed) < 2 ? (this.stuckT || 0) + dt : 0;
-    const reversing = this.stuckT > 1.5 && this.stuckT < 3;
-    if (this.stuckT > 3) this.stuckT = 0;
-    car.drive(dt, {
-      throttle: reversing ? -1 : (sharp ? 0.35 : (d > 12 ? 1 : 0.3)),
-      steer: reversing ? -steer : steer,
-      brake: sharp && Math.abs(car.speed) > 12,
-    }, g.colliders);
-    g.sound.setEngine(Math.abs(car.speed) / car.model.top, true);
-    // In chase mode keep the heat up.
-    if (this.preset === '3' && g.wanted.stars < 3) g.wanted.addHeat(10, '');
+
+  if (selftest) {
+    window.setTimeout(() => {
+      const checks = {
+        noErrors: (window.__errors || []).length === 0,
+        renderer: !!game.renderer,
+        scenePopulated: game.scene.children.length > 50,
+        trafficCars: game.traffic.cars.length === 14,
+        parkedCars: game.traffic.parked.length === 12,
+        pedestrians: game.peds.list.length === 26,
+        missions: game.missions.defs.length === 6,
+        playerAlive: game.player.health > 0,
+      };
+      checks.errors = window.__errors || [];
+      const ok = Object.keys(checks).every((k) => k === 'errors' || checks[k] === true);
+      window.__selftest = { ok, checks };
+      document.title = ok ? 'SELFTEST OK' : 'SELFTEST FAIL';
+      // eslint-disable-next-line no-console
+      console.log('SELFTEST', JSON.stringify(window.__selftest));
+    }, 2000);
   }
-  streetWaypoint(car, t) {
-    const sz = nearestStreet(car.z), sx = nearestStreet(car.x);
-    if (Math.abs(car.z - sz) > 3) return { x: car.x, z: sz };
-    if (Math.abs(car.x - t.x) > 10) return { x: t.x, z: sz };
-    if (Math.abs(t.x - nearestStreet(t.x)) < 8 && Math.abs(car.x - sx) > 3) return { x: sx, z: car.z };
-    return t;
-  }
+
+  return { shot, demo, selftest };
 }

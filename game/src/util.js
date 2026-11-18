@@ -1,63 +1,87 @@
-// Solmar Bay — shared math, seeded random and procedural canvas textures.
+// Solmar Bay — shared utilities: seeded random numbers, math helpers,
+// canvas texture helpers. No game logic lives here, only small pure tools
+// every other module imports.
+
+// Deterministic PRNG (mulberry32). The city is generated from a fixed seed
+// so the same world shows up every load, including in screenshots.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-export const lerp = (a, b, t) => a + (b - a) * t;
-export const dist2d = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
-export function angleLerp(a, b, t) {
-  let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+
+export class RNG {
+  constructor(seed) {
+    this.next = mulberry32(seed);
+  }
+  // Float in [0, 1).
+  float() {
+    return this.next();
+  }
+  // Float in [a, b).
+  range(a, b) {
+    return a + (b - a) * this.next();
+  }
+  // Integer in [a, b] inclusive.
+  int(a, b) {
+    return a + Math.floor(this.next() * (b - a + 1));
+  }
+  // Random element of an array.
+  pick(arr) {
+    return arr[Math.floor(this.next() * arr.length)];
+  }
+  // True with probability p.
+  chance(p) {
+    return this.next() < p;
+  }
+}
+
+export function clamp(v, a, b) {
+  return v < a ? a : v > b ? b : v;
+}
+
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+// Shortest-path angle interpolation (angles in radians).
+export function lerpAngle(a, b, t) {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
 }
-export function angleDiff(a, b) {
-  return ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+
+export function dist2(ax, az, bx, bz) {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
 }
-// Procedural building facade texture: coloured wall + lit/unlit windows.
-export function facadeTexture(base, lit, seed) {
-  const rnd = mulberry32(seed);
-  const c = document.createElement('canvas'); c.width = 128; c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0, 0, 128, 256);
-  g.fillStyle = 'rgba(0,0,0,0.18)';
-  for (let y = 0; y < 256; y += 32) g.fillRect(0, y, 128, 3);
-  for (let y = 14; y < 250; y += 32) for (let x = 12; x < 120; x += 28) {
-    const on = rnd() < lit;
-    g.fillStyle = on ? '#ffd98a' : (rnd() < 0.5 ? '#1c2b3a' : '#2b4258');
-    g.fillRect(x, y, 18, 20);
-    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x, y, 18, 3);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+
+// Build a canvas and hand it to a draw callback. Callers turn the canvas
+// into a texture; this helper stays free of any 3D library.
+export function makeCanvas(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+  draw(ctx, w, h);
+  return c;
 }
-// Asphalt with lane dashes, for road strips.
-export function roadTexture() {
-  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#2e3138'; g.fillRect(0, 0, 128, 128);
-  g.fillStyle = '#3a3e46';
-  for (let i = 0; i < 40; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
-  g.fillStyle = '#e8c33c'; g.fillRect(62, 8, 4, 40); g.fillRect(62, 80, 4, 40);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+
+// Format a game-clock minute count (minutes since midnight) as HH:MM.
+export function formatClock(totalMinutes) {
+  const m = Math.floor(totalMinutes) % 1440;
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return hh + ':' + mm;
 }
-export function groundTexture() {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = '#7a8a5a'; g.fillRect(0, 0, 256, 256);
-  const rnd = mulberry32(99);
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
-    g.fillRect(rnd() * 256, rnd() * 256, 3, 3);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(24, 24); t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+
+// Format a dollar amount with thousands separators, e.g. 1250 -> $1,250.
+export function formatCash(n) {
+  return '$' + Math.floor(n).toLocaleString('en-US');
 }
