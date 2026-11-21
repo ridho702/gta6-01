@@ -1,253 +1,278 @@
-// particles.js — pooled spark & smoke particle systems for Solmar Bay.
-// Fixed allocation: two THREE.Points pools (sparks 400 + smoke 200 = 600 max),
-// no new allocations per frame. Per-particle size/alpha/color via a small
-// ShaderMaterial so sparks can fade to black (additive) and smoke can fade
-// toward the sky colour (normal blending).
+// particles.js — Solmar Bay pooled particle system.
+// Two fixed-capacity THREE.Points pools (sparks 400 + smoke 200 = 600 max).
+// Everything is allocated once in the constructor: positions, velocities,
+// lifetimes and shader attributes live in preallocated Float32Arrays and
+// are written in place. update() and the spawn methods allocate nothing
+// (no `new` per frame, no per-frame geometry/material creation).
+// Dead particles are hidden (alpha 0 / size 0) and their slot is reused
+// by the next spawn via a ring-buffer cursor.
 
-const VERT = `
-attribute float aSize;
-attribute float aAlpha;
-attribute vec3 aColor;
-varying float vAlpha;
-varying vec3 vColor;
-void main() {
-  vColor = aColor;
-  vAlpha = aAlpha;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = aSize * (240.0 / max(1.0, -mv.z));
-  gl_Position = projectionMatrix * mv;
+const SPARK_CAP = 400;
+const SMOKE_CAP = 200;
+const FLASH_COLORS = [0xffe9a8, 0xffc040, 0xfff6c0];
+const EXPLOSION_COLORS = [0xffdd55, 0xff8a20, 0xff4a1a, 0xffe9a8];
+
+// Sky/fog tint the smoke fades toward as it dies (matches scene fog).
+const SKY_R = 0xc0 / 255;
+const SKY_G = 0x78 / 255;
+const SKY_B = 0x50 / 255;
+
+const VERT = [
+  'attribute float aSize;',
+  'attribute float aAlpha;',
+  'attribute vec3 aColor;',
+  'varying float vAlpha;',
+  'varying vec3 vColor;',
+  'void main() {',
+  '  vAlpha = aAlpha;',
+  '  vColor = aColor;',
+  '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+  '  gl_PointSize = aSize * (240.0 / max(0.1, -mv.z));',
+  '  gl_Position = projectionMatrix * mv;',
+  '}',
+].join('\n');
+
+const FRAG = [
+  'uniform float uFadeToSky;',
+  'varying float vAlpha;',
+  'varying vec3 vColor;',
+  'void main() {',
+  '  vec2 c = gl_PointCoord - vec2(0.5);',
+  '  float d = length(c);',
+  '  if (d > 0.5) discard;',
+  '  float soft = smoothstep(0.5, 0.1, d);',
+  '  vec3 col = mix(vColor, vec3(' + SKY_R.toFixed(3) + ', ' + SKY_G.toFixed(3) + ', ' + SKY_B.toFixed(3) + '), uFadeToSky * (1.0 - vAlpha));',
+  '  gl_FragColor = vec4(col, vAlpha * soft);',
+  '}',
+].join('\n');
+
+function makePoints(THREE, cap, additive) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(cap * 3);
+  const size = new Float32Array(cap);
+  const alpha = new Float32Array(cap);
+  const color = new Float32Array(cap * 3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  geo.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1));
+  geo.setAttribute('aColor', new THREE.BufferAttribute(color, 3));
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    uniforms: { uFadeToSky: { value: additive ? 0 : 1 } },
+    transparent: true,
+    depthWrite: false,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.renderOrder = 10;
+  return { points: points, geo: geo, pos: pos, size: size, alpha: alpha, color: color };
 }
-`;
 
-const FRAG = `
-varying float vAlpha;
-varying vec3 vColor;
-void main() {
-  vec2 uv = gl_PointCoord - 0.5;
-  float d = length(uv);
-  float a = smoothstep(0.5, 0.05, d) * vAlpha;
-  if (a < 0.01) discard;
-  gl_FragColor = vec4(vColor, a);
-}
-`;
-
-function hexToRgb(hex) {
-  return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
-}
-
-function posOf(pos) {
-  if (!pos) return [0, 0, 0];
-  if (Array.isArray(pos)) return [pos[0] || 0, pos[1] || 0, pos[2] || 0];
-  return [pos.x || 0, pos.y || 0, pos.z || 0];
+function makeState(cap) {
+  return {
+    vel: new Float32Array(cap * 3),
+    life: new Float32Array(cap),
+    maxLife: new Float32Array(cap),
+    size0: new Float32Array(cap),
+    grow: new Float32Array(cap),
+    drag: new Float32Array(cap),
+    grav: new Float32Array(cap),
+    cursor: 0,
+  };
 }
 
 export class Particles {
   constructor(scene, THREE) {
-    this.THREE = THREE;
     this.scene = scene;
-    // Sky colour the smoke fades toward (matches the dusk fog 0xc07850).
-    this.sky = [0.75, 0.47, 0.31];
-    this.sparkCap = 400;
-    this.smokeCap = 200;
-    this.sparkPool = this._makePool(this.sparkCap, THREE.AdditiveBlending, 'spark');
-    this.smokePool = this._makePool(this.smokeCap, THREE.NormalBlending, 'smoke');
-    scene.add(this.sparkPool.points);
+    this.THREE = THREE;
+
+    this.sparks = makePoints(THREE, SPARK_CAP, true);
+    this.smokePool = makePoints(THREE, SMOKE_CAP, false);
+    scene.add(this.sparks.points);
     scene.add(this.smokePool.points);
+
+    this._sparkState = makeState(SPARK_CAP);
+    this._smokeState = makeState(SMOKE_CAP);
+    this._dir = new Float32Array(3); // reused scratch for _randDir()
   }
 
-  _makePool(cap, blending, kind) {
-    const THREE = this.THREE;
-    const geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(cap * 3);
-    const col = new Float32Array(cap * 3);
-    const size = new Float32Array(cap);
-    const alpha = new Float32Array(cap);
-    for (let i = 0; i < cap; i++) pos[i * 3 + 1] = -9999;
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-    geo.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1));
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: FRAG,
-      transparent: true,
-      depthWrite: false,
-      blending: blending,
-    });
-    const points = new THREE.Points(geo, mat);
-    points.frustumCulled = false;
-    return {
-      kind: kind,
-      cap: cap,
-      cursor: 0,
-      points: points,
-      geo: geo,
-      pos: pos,
-      col: col,
-      size: size,
-      alpha: alpha,
-      vel: new Float32Array(cap * 3),
-      life: new Float32Array(cap),
-      maxLife: new Float32Array(cap),
-      size0: new Float32Array(cap),
-      size1: new Float32Array(cap),
-      base: new Float32Array(cap * 3),
-      grav: new Float32Array(cap),
-      drag: new Float32Array(cap),
-      alive: new Uint8Array(cap),
-    };
-  }
-
-  _spawn(pool, x, y, z, vx, vy, vz, life, size0, size1, r, g, b, grav, drag) {
-    const i = pool.cursor;
-    pool.cursor = (i + 1) % pool.cap;
+  // ---- internal spawn (no allocation; writes one ring-buffer slot) ----
+  _spawn(pool, state, cap, x, y, z, vx, vy, vz, r, g, b, life, size, grow, drag, grav) {
+    const i = state.cursor;
+    state.cursor = (state.cursor + 1) % cap;
     const i3 = i * 3;
     pool.pos[i3] = x;
     pool.pos[i3 + 1] = y;
     pool.pos[i3 + 2] = z;
-    pool.vel[i3] = vx;
-    pool.vel[i3 + 1] = vy;
-    pool.vel[i3 + 2] = vz;
-    pool.life[i] = life;
-    pool.maxLife[i] = life;
-    pool.size0[i] = size0;
-    pool.size1[i] = size1;
-    pool.base[i3] = r;
-    pool.base[i3 + 1] = g;
-    pool.base[i3 + 2] = b;
-    pool.col[i3] = r;
-    pool.col[i3 + 1] = g;
-    pool.col[i3 + 2] = b;
-    pool.size[i] = size0;
-    pool.alpha[i] = pool.kind === 'smoke' ? 0 : 1;
-    pool.grav[i] = grav;
-    pool.drag[i] = drag;
-    pool.alive[i] = 1;
+    state.vel[i3] = vx;
+    state.vel[i3 + 1] = vy;
+    state.vel[i3 + 2] = vz;
+    pool.color[i3] = r;
+    pool.color[i3 + 1] = g;
+    pool.color[i3 + 2] = b;
+    pool.size[i] = size;
+    pool.alpha[i] = 1;
+    state.life[i] = life;
+    state.maxLife[i] = life > 0 ? life : 0.001;
+    state.size0[i] = size;
+    state.grow[i] = grow;
+    state.drag[i] = drag;
+    state.grav[i] = grav;
   }
 
-  // Fountain of glowing sparks. opts: count, colors (array of hex) / color,
-  // speed, life, size, gravity (default -12, sparks fall).
+  _spawnSpark(x, y, z, vx, vy, vz, hex, life, size) {
+    this._spawn(
+      this.sparks, this._sparkState, SPARK_CAP,
+      x, y, z, vx, vy, vz,
+      ((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255,
+      life, size, 0, 3.0, 6.0
+    );
+  }
+
+  _spawnSmoke(x, y, z, vx, vy, vz, shade, life, size, grow) {
+    this._spawn(
+      this.smokePool, this._smokeState, SMOKE_CAP,
+      x, y, z, vx, vy, vz,
+      shade, shade, shade,
+      life, size, grow, 1.2, -0.6
+    );
+  }
+
+  // Random direction, uniform over the sphere, written into the reused
+  // scratch vector (no allocation). Callers must consume it immediately.
+  _randDir() {
+    const u = Math.random() * 2 - 1;
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    this._dir[0] = Math.cos(a) * s;
+    this._dir[1] = u;
+    this._dir[2] = Math.sin(a) * s;
+    return this._dir;
+  }
+
+  // ---- public API (called from main.js) ----
+
+  // Medium spray of sparks in the caller's colors (punch dust).
   burst(pos, opts) {
     opts = opts || {};
-    const p = posOf(pos);
-    const count = opts.count || 24;
-    const colors = opts.colors || (opts.color !== undefined ? [opts.color] : [0xffc040, 0xff7020, 0xffd880]);
-    const speed = opts.speed || 6;
-    const life = opts.life || 0.7;
-    const size = opts.size || 0.35;
-    const grav = opts.gravity !== undefined ? opts.gravity : -12;
+    const count = opts.count !== undefined ? opts.count : 8;
+    const colors = opts.colors && opts.colors.length ? opts.colors : [0xffffff];
+    const speed = opts.speed !== undefined ? opts.speed : 2.5;
+    const life = opts.life !== undefined ? opts.life : 0.4;
+    const size = opts.size !== undefined ? opts.size : 0.3;
     for (let n = 0; n < count; n++) {
-      const c = hexToRgb(colors[(Math.random() * colors.length) | 0]);
-      const vx = (Math.random() - 0.5) * 2 * speed;
-      const vy = Math.random() * speed * 0.9 + speed * 0.2;
-      const vz = (Math.random() - 0.5) * 2 * speed;
-      this._spawn(
-        this.sparkPool, p[0], p[1], p[2], vx, vy, vz,
-        life * (0.6 + Math.random() * 0.7),
-        size * (0.7 + Math.random() * 0.6), size * 0.2,
-        c[0], c[1], c[2], grav, 0.6
+      const d = this._randDir();
+      const sp = speed * (0.5 + Math.random() * 0.8);
+      const hex = colors[(Math.random() * colors.length) | 0];
+      this._spawnSpark(
+        pos.x, pos.y, pos.z,
+        d[0] * sp, d[1] * sp + 0.8, d[2] * sp,
+        hex, life * (0.7 + Math.random() * 0.6), size
       );
     }
   }
 
-  // Rising grey smoke puff that grows and fades toward the sky colour.
-  // opts: count, life, size.
+  // Tiny, very short spark spray (muzzle flash at the gun).
+  flash(pos) {
+    for (let n = 0; n < 6; n++) {
+      const d = this._randDir();
+      const sp = 2.5 + Math.random() * 2.5;
+      this._spawnSpark(
+        pos.x, pos.y, pos.z,
+        d[0] * sp, d[1] * sp, d[2] * sp,
+        FLASH_COLORS[(Math.random() * FLASH_COLORS.length) | 0],
+        0.06 + Math.random() * 0.06,
+        0.45
+      );
+    }
+  }
+
+  // Big burst: fast hot sparks + slow rising smoke (enemy death).
+  explosion(pos) {
+    for (let n = 0; n < 42; n++) {
+      const d = this._randDir();
+      const sp = 3 + Math.random() * 7;
+      this._spawnSpark(
+        pos.x, pos.y, pos.z,
+        d[0] * sp, d[1] * sp + 2.0, d[2] * sp,
+        EXPLOSION_COLORS[(Math.random() * EXPLOSION_COLORS.length) | 0],
+        0.35 + Math.random() * 0.45,
+        0.5 + Math.random() * 0.3
+      );
+    }
+    for (let n = 0; n < 14; n++) {
+      const d = this._randDir();
+      const shade = 0.25 + Math.random() * 0.25;
+      this._spawnSmoke(
+        pos.x + d[0] * 0.3, pos.y + Math.random() * 0.4, pos.z + d[2] * 0.3,
+        d[0] * 0.8, 1.2 + Math.random() * 1.2, d[2] * 0.8,
+        shade, 1.2 + Math.random() * 0.6, 0.9, 2.2
+      );
+    }
+  }
+
+  // Slow grey puffs rising from a smoking engine.
   smoke(pos, opts) {
     opts = opts || {};
-    const p = posOf(pos);
-    const count = opts.count || 6;
-    const life = opts.life || 2.2;
-    const size = opts.size || 1.6;
+    const count = opts.count !== undefined ? opts.count : 2;
     for (let n = 0; n < count; n++) {
-      const g = 0.42 + Math.random() * 0.22;
-      this._spawn(
-        this.smokePool,
-        p[0] + (Math.random() - 0.5) * 0.6,
-        p[1] + (Math.random() - 0.5) * 0.3,
-        p[2] + (Math.random() - 0.5) * 0.6,
-        (Math.random() - 0.5) * 0.8,
-        0.8 + Math.random() * 0.9,
-        (Math.random() - 0.5) * 0.8,
-        life * (0.7 + Math.random() * 0.6),
-        size * (0.8 + Math.random() * 0.5),
-        size * 2.4 + Math.random() * 1.5,
-        g, g, g, 0.6, 0.35
+      const shade = 0.35 + Math.random() * 0.25;
+      this._spawnSmoke(
+        pos.x + (Math.random() - 0.5) * 0.4,
+        pos.y + (Math.random() - 0.5) * 0.2,
+        pos.z + (Math.random() - 0.5) * 0.4,
+        (Math.random() - 0.5) * 0.5,
+        0.8 + Math.random() * 0.8,
+        (Math.random() - 0.5) * 0.5,
+        shade, 1.0 + Math.random() * 0.7, 0.6, 1.8
       );
     }
   }
 
-  // Short-lived yellow-white muzzle flash.
-  flash(pos) {
-    this.burst(pos, {
-      count: 12,
-      colors: [0xffffff, 0xffe9a0],
-      speed: 2.5,
-      life: 0.2,
-      size: 0.9,
-      gravity: 0,
-    });
-  }
-
-  // Orange/red burst + smoke + flash.
-  explosion(pos) {
-    const p = posOf(pos);
-    this.flash({ x: p[0], y: p[1], z: p[2] });
-    this.burst({ x: p[0], y: p[1], z: p[2] }, {
-      count: 36,
-      colors: [0xff8020, 0xffc040, 0xff3020],
-      speed: 8,
-      life: 0.9,
-      size: 0.5,
-    });
-    this.smoke({ x: p[0], y: p[1] + 0.4, z: p[2] }, { count: 12, life: 2.6 });
-  }
-
-  _updatePool(pool, dt) {
-    const sky = this.sky;
-    for (let i = 0; i < pool.cap; i++) {
-      if (!pool.alive[i]) continue;
-      pool.life[i] -= dt;
-      if (pool.life[i] <= 0) {
-        pool.alive[i] = 0;
-        pool.alpha[i] = 0;
-        pool.pos[i * 3 + 1] = -9999;
+  // ---- per-frame advance (no allocation) ----
+  _updatePool(pool, state, cap, dt) {
+    const pos = pool.pos;
+    const vel = state.vel;
+    const life = state.life;
+    const alpha = pool.alpha;
+    const size = pool.size;
+    let anyAlive = false;
+    for (let i = 0; i < cap; i++) {
+      if (life[i] <= 0) continue;
+      life[i] -= dt;
+      if (life[i] <= 0) {
+        life[i] = 0;
+        alpha[i] = 0;
+        size[i] = 0;
         continue;
       }
-      const frac = 1 - pool.life[i] / pool.maxLife[i];
+      anyAlive = true;
       const i3 = i * 3;
-      const dragF = Math.max(0, 1 - pool.drag[i] * dt);
-      pool.vel[i3] *= dragF;
-      pool.vel[i3 + 1] = pool.vel[i3 + 1] * dragF + pool.grav[i] * dt;
-      pool.vel[i3 + 2] *= dragF;
-      pool.pos[i3] += pool.vel[i3] * dt;
-      pool.pos[i3 + 1] += pool.vel[i3 + 1] * dt;
-      pool.pos[i3 + 2] += pool.vel[i3 + 2] * dt;
-      pool.size[i] = pool.size0[i] + (pool.size1[i] - pool.size0[i]) * frac;
-      if (pool.kind === 'spark') {
-        pool.alpha[i] = 1 - frac;
-        const dim = 1 - frac * 0.6;
-        pool.col[i3] = pool.base[i3] * dim;
-        pool.col[i3 + 1] = pool.base[i3 + 1] * dim;
-        pool.col[i3 + 2] = pool.base[i3 + 2] * dim;
-      } else {
-        // Smoke: fade in fast, fade out slowly, colour drifts to sky colour.
-        const fadeIn = Math.min(1, frac * 6);
-        pool.alpha[i] = (1 - frac) * 0.55 * fadeIn;
-        pool.col[i3] = pool.base[i3] + (sky[0] - pool.base[i3]) * frac;
-        pool.col[i3 + 1] = pool.base[i3 + 1] + (sky[1] - pool.base[i3 + 1]) * frac;
-        pool.col[i3 + 2] = pool.base[i3 + 2] + (sky[2] - pool.base[i3 + 2]) * frac;
-      }
+      const damp = 1 - state.drag[i] * dt;
+      vel[i3] *= damp;
+      vel[i3 + 1] = vel[i3 + 1] * damp - state.grav[i] * dt;
+      vel[i3 + 2] *= damp;
+      pos[i3] += vel[i3] * dt;
+      pos[i3 + 1] += vel[i3 + 1] * dt;
+      pos[i3 + 2] += vel[i3 + 2] * dt;
+      const frac = life[i] / state.maxLife[i];
+      alpha[i] = frac * frac;
+      size[i] = state.size0[i] + state.grow[i] * (1 - frac);
     }
-    pool.geo.attributes.position.needsUpdate = true;
-    pool.geo.attributes.aColor.needsUpdate = true;
-    pool.geo.attributes.aSize.needsUpdate = true;
-    pool.geo.attributes.aAlpha.needsUpdate = true;
+    if (anyAlive) {
+      pool.geo.attributes.position.needsUpdate = true;
+      pool.geo.attributes.aSize.needsUpdate = true;
+      pool.geo.attributes.aAlpha.needsUpdate = true;
+      pool.geo.attributes.aColor.needsUpdate = true;
+    }
   }
 
   update(dt) {
-    if (!dt || dt <= 0) return;
+    if (dt <= 0) return;
     if (dt > 0.1) dt = 0.1;
-    this._updatePool(this.sparkPool, dt);
-    this._updatePool(this.smokePool, dt);
+    this._updatePool(this.sparks, this._sparkState, SPARK_CAP, dt);
+    this._updatePool(this.smokePool, this._smokeState, SMOKE_CAP, dt);
   }
 }

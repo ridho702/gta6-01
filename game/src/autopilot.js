@@ -242,7 +242,7 @@ function stageShot(game, n) {
       patchRoadblockMinimap(game);
     }
   } else if (n === 2) {
-    putPlayerInCar(game, -130, 299, Math.PI / 2, 10);
+    putPlayerInCar(game, -130, 300, Math.PI / 2, 10);
     try { if (progress) progress.addRep(180); } catch (e) {}
     startMissionByName(game, 'Neon Street Race');
     clearDialogue(game);
