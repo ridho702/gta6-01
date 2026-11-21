@@ -42,6 +42,7 @@ export class Combat {
     this.tracers = []; // { line, life }
     this.bursts = []; // { points, vel, life }
     this.enemies = [];
+    this._flashes = []; // { mesh, life }
     this._flashMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
   }
 
@@ -157,8 +158,8 @@ export class Combat {
 
   spawnEnemy(x, z) {
     const g = new this.THREE.Group();
-    const jacket = new this.THREE.MeshLambertMaterial({ color: 0x5a1a1a });
-    const pants = new this.THREE.MeshLambertMaterial({ color: 0x1c1c22 });
+    const jacket = new this.THREE.MeshLambertMaterial({ color: 0x9a3030, emissive: 0x2a0d0d });
+    const pants = new this.THREE.MeshLambertMaterial({ color: 0x3a3a48 });
     const skin = new this.THREE.MeshLambertMaterial({ color: 0xc98a5a });
     const body = new this.THREE.Mesh(new this.THREE.CylinderGeometry(0.3, 0.34, 1.0, 8), jacket);
     body.position.y = 1.0;
@@ -167,7 +168,7 @@ export class Combat {
     head.position.y = 1.72;
     g.add(head);
     const band = new this.THREE.Mesh(
-      new this.THREE.BoxGeometry(0.56, 0.1, 0.56),
+      new this.THREE.BoxGeometry(0.62, 0.1, 0.62),
       new this.THREE.MeshBasicMaterial({ color: 0xd02020 }),
     );
     band.position.y = 1.86;
@@ -230,11 +231,30 @@ export class Combat {
         dir.z /= len;
         const end = { x: from.x + dir.x * d, y: 1.2, z: from.z + dir.z * d };
         this._tracer(from, end);
+        // Muzzle flash at the gun tip: just in front of the enemy at
+        // ~1.4 m height, along its facing (towards the player).
+        const flash = new this.THREE.Mesh(
+          new this.THREE.SphereGeometry(0.18, 8, 6),
+          this._flashMat,
+        );
+        flash.position.set(from.x + (dx / d) * 0.7, 1.4, from.z + (dz / d) * 0.7);
+        this.scene.add(flash);
+        this._flashes.push({ mesh: flash, life: 0.06 });
         if (audio) audio.enemyShot();
         if (this.rng.chance(0.34)) onPlayerHit(this.rng.range(8, 14));
       }
     }
-    // Fade tracers and bursts.
+    // Fade tracers, bursts and muzzle flashes.
+    for (let i = this._flashes.length - 1; i >= 0; i--) {
+      const f = this._flashes[i];
+      f.life -= dt;
+      if (f.life <= 0) {
+        this.scene.remove(f.mesh);
+        f.mesh.geometry.dispose();
+        // NB: _flashMat is shared across flashes — do not dispose it.
+        this._flashes.splice(i, 1);
+      }
+    }
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];
       t.life -= dt;

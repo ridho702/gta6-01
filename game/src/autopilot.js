@@ -10,6 +10,8 @@
 // with staging diagnostics (mission name, positions, log) for debugging;
 // it is display:none so it never affects the picture.
 
+import { WEAPONS } from './progress.js';
+
 const LOG = [];
 function log(msg) {
   LOG.push(String(msg));
@@ -370,10 +372,24 @@ function stageShot(game, n) {
     game.camPitch = 0.15; // level the camera a touch so the heli fits
     if (game.airUnit) {
       try {
-        game.airUnit.holdAngle = game.camYaw + Math.PI + 0.15;
-        // Same as shot 1: lower the heli into the frame for the shot.
-        game.airUnit.height = 12;
+        game.airUnit.holdAngle = game.camYaw + Math.PI + 0.55;
+        // Shot 4: higher + farther than shot 1 so the heli sits
+        // smaller and off the "AIR-1 OVERHEAD" banner.
+        game.airUnit.height = 17;
+        game.airUnit.radius = 28;
       } catch (e) {}
+    }
+    try {
+      if (game.roadblocks) {
+        game.roadblocks._timer = 0;
+        game.roadblocks.update(0.016, 5, { x: 0, z: -240 }, 0);
+        // Let the main loop spawn a second block ~7 s in, so one is
+        // still ahead of the car when the screenshot is taken.
+        game.roadblocks._timer = 7;
+        log('roadblock pre-spawn blocks=' + (game.roadblocks.blocks ? game.roadblocks.blocks.length : '?'));
+      }
+    } catch (e) {
+      log('roadblock pre-spawn failed: ' + e.message);
     }
   } else {
     log('unknown shot: ' + n);
@@ -428,7 +444,7 @@ async function runInteractions(game) {
   try {
     const before = stationId(game);
     key('KeyR');
-    await sleep(150);
+    await sleep(700);
     const after = stationId(game);
     details.radioBefore = before;
     details.radioAfter = after;
@@ -442,7 +458,7 @@ async function runInteractions(game) {
     game.progress.owned.smg = true;
     game.progress.ammo.smg = 120;
     key('Digit3');
-    await sleep(150);
+    await sleep(700);
     const cur = game.progress.currentWeapon ? game.progress.currentWeapon() : null;
     details.weapon = cur ? cur.id : null;
     res.weapon = !!cur && cur.id === 'smg';
@@ -459,7 +475,7 @@ async function runInteractions(game) {
     const w0 = wantedNow(game);
     const cd0 = game.progress ? game.progress.crewCooldown : 0;
     key('KeyZ');
-    await sleep(150);
+    await sleep(700);
     const w1 = wantedNow(game);
     const cd1 = game.progress ? game.progress.crewCooldown : 0;
     details.wantedBefore = w0;
@@ -475,17 +491,17 @@ async function runInteractions(game) {
   // (4) Arms shop: teleport to the gun shop, KeyE must open 'arms'.
   try {
     setPlayerPos(game, -26, 78);
-    await sleep(150);
+    await sleep(700);
     clearDialogue(game);
     key('KeyE');
-    await sleep(300);
+    await sleep(800);
     details.armsOpen = game.shops ? game.shops.open : null;
     res.arms = !!game.shops && game.shops.open === 'arms';
     if (!res.arms) {
       // A dialogue may have swallowed the first KeyE; clear and retry.
       clearDialogue(game);
       key('KeyE');
-      await sleep(300);
+      await sleep(800);
       details.armsOpenRetry = game.shops ? game.shops.open : null;
       res.arms = !!game.shops && game.shops.open === 'arms';
     }
@@ -497,16 +513,16 @@ async function runInteractions(game) {
   // (5) Garage: same at the garage landmark, expect 'garage'.
   try {
     setPlayerPos(game, 182, -130);
-    await sleep(150);
+    await sleep(700);
     clearDialogue(game);
     key('KeyE');
-    await sleep(300);
+    await sleep(800);
     details.garageOpen = game.shops ? game.shops.open : null;
     res.garage = !!game.shops && game.shops.open === 'garage';
     if (!res.garage) {
       clearDialogue(game);
       key('KeyE');
-      await sleep(300);
+      await sleep(800);
       details.garageOpenRetry = game.shops ? game.shops.open : null;
       res.garage = !!game.shops && game.shops.open === 'garage';
     }
@@ -514,6 +530,114 @@ async function runInteractions(game) {
   } catch (e) {
     log('interaction garage: ' + e.message);
     res.garage = false;
+  }
+  // --- purchase probes (6)-(7): TEST SETUP ---
+  // The selftest starts with $250 cash, but SMG ammo ($120) + a garage
+  // repair ($150) = $270, so the two probes cannot both run on the
+  // starting balance. Give the player a known test balance and a known
+  // SMG ammo count so both probes can check exact before/after numbers.
+  // Test setup only — the selftest never runs in normal play.
+  try {
+    if (game.player) game.player.cash = 1000;
+    game.progress.owned.smg = true;
+    game.progress.ammo.smg = 120;
+    details.cashTestSetup = 1000;
+    details.ammoTestSetup = 120;
+  } catch (e) {
+    log('purchase test setup: ' + e.message);
+  }
+  // (6) Arms purchase: back to the gun shop, open 'arms', then buy SMG
+  // ammo through the shop's own buy path. The SMG is owned (step 2, and
+  // re-asserted above), so _buyWeapon takes the ammo branch: $120 for
+  // +90 rounds. The shop stays open through the purchase, then closes.
+  try {
+    const cashBefore = game.player ? game.player.cash : null;
+    const ammoBefore = game.progress ? game.progress.ammo.smg : null;
+    setPlayerPos(game, -26, 78);
+    await sleep(700);
+    clearDialogue(game);
+    key('KeyE');
+    await sleep(800);
+    let open = !!game.shops && game.shops.open === 'arms';
+    if (!open) {
+      // A dialogue may have swallowed the first KeyE; clear and retry.
+      clearDialogue(game);
+      key('KeyE');
+      await sleep(800);
+      open = !!game.shops && game.shops.open === 'arms';
+    }
+    details.buyArmsOpen = game.shops ? game.shops.open : null;
+    let bought = false;
+    if (open) {
+      const smg = WEAPONS.find((w) => w.id === 'smg');
+      if (smg && game.shops && typeof game.shops._buyWeapon === 'function') {
+        game.shops._buyWeapon(smg);
+        bought = true;
+      } else {
+        log('interaction buyArms: SMG def or _buyWeapon missing');
+      }
+    }
+    const cashAfter = game.player ? game.player.cash : null;
+    const ammoAfter = game.progress ? game.progress.ammo.smg : null;
+    details.buyArmsCashBefore = cashBefore;
+    details.buyArmsCashAfter = cashAfter;
+    details.buyArmsAmmoBefore = ammoBefore;
+    details.buyArmsAmmoAfter = ammoAfter;
+    res.buyArms = bought &&
+      cashBefore !== null && cashAfter !== null && cashBefore - cashAfter === 120 &&
+      ammoBefore !== null && ammoAfter !== null && ammoAfter - ammoBefore === 90;
+    if (game.shops && typeof game.shops.close === 'function') game.shops.close();
+  } catch (e) {
+    log('interaction buyArms: ' + e.message);
+    res.buyArms = false;
+  }
+  // (7) Garage repair: put the player in a car at the garage, damage it,
+  // open 'garage', then buy the repair through the shop's own buy path.
+  // Repair costs $150, restores condition to 100 and clears smoking.
+  try {
+    const spawned = putPlayerInCar(game, 182, -130, 0, 2);
+    await sleep(700);
+    const car = (game.player && game.player.car) || spawned;
+    if (car) {
+      car.condition = 60;
+      car.smoking = true;
+    }
+    const cashBefore = game.player ? game.player.cash : null;
+    const condBefore = car ? car.condition : null;
+    const smokingBefore = car ? car.smoking : null;
+    clearDialogue(game);
+    key('KeyE');
+    await sleep(800);
+    let open = !!game.shops && game.shops.open === 'garage';
+    if (!open) {
+      // A dialogue may have swallowed the first KeyE; clear and retry.
+      clearDialogue(game);
+      key('KeyE');
+      await sleep(800);
+      open = !!game.shops && game.shops.open === 'garage';
+    }
+    details.buyGarageOpen = game.shops ? game.shops.open : null;
+    let bought = false;
+    if (open && car && game.shops && typeof game.shops._buyGarage === 'function') {
+      game.shops._buyGarage({ id: 'repair', price: 150 });
+      bought = true;
+    }
+    const cashAfter = game.player ? game.player.cash : null;
+    const condAfter = car ? car.condition : null;
+    const smokingAfter = car ? car.smoking : null;
+    details.buyGarageCashBefore = cashBefore;
+    details.buyGarageCashAfter = cashAfter;
+    details.buyGarageCondBefore = condBefore;
+    details.buyGarageCondAfter = condAfter;
+    details.buyGarageSmokingBefore = smokingBefore;
+    details.buyGarageSmokingAfter = smokingAfter;
+    res.buyGarage = bought && !!car &&
+      cashBefore !== null && cashAfter !== null && cashBefore - cashAfter === 150 &&
+      condAfter === 100 && smokingAfter === false;
+    if (game.shops && typeof game.shops.close === 'function') game.shops.close();
+  } catch (e) {
+    log('interaction buyGarage: ' + e.message);
+    res.buyGarage = false;
   }
   res.details = details;
   return res;
@@ -542,7 +666,7 @@ async function runSelftest(game) {
   };
   const inter = await runInteractions(game);
   checks.interactions = inter;
-  checks.interactionsOk = !!(inter.radio && inter.weapon && inter.crew && inter.arms && inter.garage);
+  checks.interactionsOk = !!(inter.radio && inter.weapon && inter.crew && inter.arms && inter.garage && inter.buyArms && inter.buyGarage);
   const basicOk = checks.noErrors && checks.renderer && checks.sceneChildren &&
     checks.trafficCars && checks.parked && checks.pedestrians &&
     checks.missions && checks.playerAlive;

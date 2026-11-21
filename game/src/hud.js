@@ -183,7 +183,7 @@ export class HUD {
       const heading = player.mode === 'car' && player.car ? player.car.angle : player.angle;
       const rb = game.roadblocks ? game.roadblocks.ahead(pp, heading, 90) : 0;
       if (rb > 0) {
-        msg = '⚠ ROADBLOCK AHEAD — ' + rb + 'm';
+        msg = '⚠ ROADBLOCK AHEAD — ' + Math.round(rb) + 'm';
         warn = true;
       } else if (game.airUnit && game.airUnit.active) {
         msg = '✦ AIR-1 OVERHEAD — IN SIGHT';
