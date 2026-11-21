@@ -1,12 +1,16 @@
-// Solmar Bay — the police air unit and roadblocks. SBPD Air-1 is a
-// helicopter that orbits the player once the heat hits three stars, with
-// spinning rotors and a spotlight cone tracking the player on the ground.
-// At four stars the SBPD also throws roadblocks across the road ahead of
-// the player. Both are pure scene dressing plus a little pressure: the
-// heli itself does no damage, the roadblock cars are solid obstacles.
-
-import { clamp, dist2 } from './util.js';
-import { HALF } from './city.js';
+// airunit.js — police helicopter + roadblocks (Sprint 1 visual polish).
+// Same behaviour as before, much more visible on screen:
+//   - helicopter orbits LOWER (height ~28) and CLOSER (radius ~22),
+//     slower, so it stays in frame;
+//   - periodic low "flyover" sweep (about every 25 s the heli dips to
+//     ~14 and sweeps fast across the player's view, then climbs back);
+//   - brighter spotlight cone (opacity ~0.22) and a bigger/brighter
+//     ground light pool (radius ~9, opacity ~0.35);
+//   - rotor blur disc, blinking red/green nav lights, spotlight lens kept.
+//   - holdAngle: when set to an angle, update() freezes the heli at that
+//     orbit angle (used by the autopilot to keep it in frame for shots).
+// Roadblocks behave exactly as before, plus a small blinking red/blue
+// beacon pair on the roof of every roadblock car.
 
 export class AirUnit {
   constructor(scene, THREE) {
@@ -14,206 +18,405 @@ export class AirUnit {
     this.THREE = THREE;
     this.active = false;
     this.angle = 0;
-    this.height = 46;
-    this.radius = 34;
-    this._build();
-    this.group.visible = false;
-  }
+    this.height = 28;
+    this.radius = 22;
+    this.holdAngle = null;
+    this._t = 0;
+    this._mode = 'orbit';
+    this._modeT = 0;
 
-  _build() {
-    const T = this.THREE;
-    const g = new T.Group();
-    const navy = new T.MeshLambertMaterial({ color: 0x1a2a4a });
-    const white = new T.MeshLambertMaterial({ color: 0xe8e8e8 });
-    const dark = new T.MeshLambertMaterial({ color: 0x14151a });
-    const glass = new T.MeshLambertMaterial({ color: 0x9fc4d8 });
-
-    const body = new T.Mesh(new T.BoxGeometry(3.4, 2.0, 5.6), navy);
-    body.position.y = 0;
-    g.add(body);
-    const nose = new T.Mesh(new T.BoxGeometry(2.6, 1.5, 1.6), glass);
-    nose.position.set(0, -0.2, 3.2);
-    g.add(nose);
-    const stripe = new T.Mesh(new T.BoxGeometry(3.45, 0.5, 5.65), white);
-    stripe.position.y = 0.4;
-    g.add(stripe);
-    const tail = new T.Mesh(new T.BoxGeometry(0.9, 0.9, 5.2), navy);
-    tail.position.set(0, 0.3, -5.0);
-    g.add(tail);
-    const fin = new T.Mesh(new T.BoxGeometry(0.3, 2.2, 1.6), white);
-    fin.position.set(0, 1.2, -7.2);
-    g.add(fin);
-    // Skids.
-    for (const sx of [-1.3, 1.3]) {
-      const skid = new T.Mesh(new T.BoxGeometry(0.18, 0.18, 5.0), dark);
-      skid.position.set(sx, -1.5, 0.4);
-      g.add(skid);
-    }
-    // Main rotor (spins) + mast.
-    const mast = new T.Mesh(new T.CylinderGeometry(0.25, 0.25, 1.2, 8), dark);
-    mast.position.y = 1.5;
-    g.add(mast);
-    this.rotor = new T.Group();
-    const bladeGeo = new T.BoxGeometry(11, 0.12, 0.7);
-    const bladeMat = new T.MeshLambertMaterial({ color: 0x22242a });
-    for (let i = 0; i < 2; i++) {
-      const blade = new T.Mesh(bladeGeo, bladeMat);
-      blade.rotation.y = (i * Math.PI) / 2;
-      this.rotor.add(blade);
-    }
-    this.rotor.position.y = 2.1;
-    g.add(this.rotor);
-    // Tail rotor.
-    this.tailRotor = new T.Mesh(new T.BoxGeometry(0.12, 2.4, 0.5), bladeMat);
-    this.tailRotor.position.set(0.6, 1.4, -7.2);
-    g.add(this.tailRotor);
-    // Searchlight: a cone of light aimed at the ground + a bright lens.
-    const coneGeo = new T.ConeGeometry(7, 42, 20, 1, true);
-    const coneMat = new T.MeshBasicMaterial({
-      color: 0xfff2b0, transparent: true, opacity: 0.10,
-      side: T.DoubleSide, depthWrite: false,
-    });
-    this.cone = new T.Mesh(coneGeo, coneMat);
-    this.cone.position.y = -22;
-    g.add(this.cone);
-    const lens = new T.Mesh(
-      new T.SphereGeometry(0.5, 10, 8),
-      new T.MeshBasicMaterial({ color: 0xfff8d0 }),
-    );
-    lens.position.set(0, -1.1, 2.6);
-    g.add(lens);
-    // The pool of light on the ground.
-    const poolGeo = new T.CircleGeometry(7, 24);
-    const poolMat = new T.MeshBasicMaterial({
-      color: 0xfff2b0, transparent: true, opacity: 0.22, depthWrite: false,
-    });
-    this.pool = new T.Mesh(poolGeo, poolMat);
-    this.pool.rotation.x = -Math.PI / 2;
-    this.pool.position.y = 0.12;
-    this.scene.add(this.pool);
-    this.pool.visible = false;
-
+    const g = new THREE.Group();
     this.group = g;
-    this.scene.add(g);
+    const dark = new THREE.MeshLambertMaterial({ color: 0x1c2733 });
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2e4a66 });
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+
+    // Fuselage.
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.6, 4.6), bodyMat);
+    g.add(body);
+    // Cockpit glass (nose, +z).
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 1.0, 1.4),
+      new THREE.MeshBasicMaterial({ color: 0x9fd8ff })
+    );
+    glass.position.set(0, 0.25, 1.9);
+    g.add(glass);
+    // Police stripe.
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(2.65, 0.35, 4.0),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    stripe.position.set(0, -0.1, 0.2);
+    g.add(stripe);
+    // Tail boom + fin.
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 5.2, 8), dark);
+    boom.rotation.x = Math.PI / 2;
+    boom.position.set(0, 0.35, -4.4);
+    g.add(boom);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.6, 1.1), dark);
+    fin.position.set(0, 1.0, -6.8);
+    g.add(fin);
+    // Landing skids.
+    const skidL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 3.6), dark);
+    skidL.position.set(-1.1, -1.15, 0.3);
+    g.add(skidL);
+    const skidR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 3.6), dark);
+    skidR.position.set(1.1, -1.15, 0.3);
+    g.add(skidR);
+
+    // Mast + main rotor (two crossed blades = 4-blade look).
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.9, 8), dark);
+    mast.position.y = 1.2;
+    g.add(mast);
+    const rotor = new THREE.Group();
+    rotor.position.y = 1.7;
+    const blade1 = new THREE.Mesh(new THREE.BoxGeometry(11, 0.08, 0.5), bladeMat);
+    rotor.add(blade1);
+    const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 11), bladeMat);
+    rotor.add(blade2);
+    g.add(rotor);
+    this.rotor = rotor;
+    // Rotor blur disc (transparent dark disc above the rotor).
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(5.5, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x000000, transparent: true, opacity: 0.16, side: THREE.DoubleSide,
+      })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 1.68;
+    g.add(disc);
+    this.disc = disc;
+
+    // Tail rotor (spins around its x axle).
+    const tailRotor = new THREE.Group();
+    tailRotor.position.set(0.35, 0.9, -6.8);
+    const tailBlade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.2, 0.3), bladeMat);
+    tailRotor.add(tailBlade);
+    g.add(tailRotor);
+    this.tailRotor = tailRotor;
+
+    // Spotlight cone: apex at the heli, widening down to the ground.
+    // Geometry is 28 tall (apex +14, base -14); it is scaled/positioned
+    // in update() to match the current height.
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(8, 28, 20, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff2b0, transparent: true, opacity: 0.22,
+        side: THREE.DoubleSide, depthWrite: false,
+      })
+    );
+    cone.position.y = -14;
+    g.add(cone);
+    this.cone = cone;
+
+    // Spotlight lens (bright disc under the nose, kept from before).
+    const lens = new THREE.Mesh(
+      new THREE.CircleGeometry(0.55, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    lens.rotation.x = Math.PI / 2; // face down
+    lens.position.set(0, -0.85, 1.6);
+    g.add(lens);
+    this.lens = lens;
+
+    // Navigation lights: red (port) / green (starboard), blinking.
+    const navRed = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff2222 })
+    );
+    navRed.position.set(-1.45, 0, 0.5);
+    g.add(navRed);
+    this.navRed = navRed;
+    const navGreen = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x22ff66 })
+    );
+    navGreen.position.set(1.45, 0, 0.5);
+    g.add(navGreen);
+    this.navGreen = navGreen;
+    // White tail strobe, blinking opposite phase.
+    const strobe = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    strobe.position.set(0, 1.6, -6.9);
+    g.add(strobe);
+    this.strobe = strobe;
+
+    // Ground light pool (scene child: stays on the ground under the
+    // player while the heli itself flies at height).
+    const pool = new THREE.Mesh(
+      new THREE.CircleGeometry(9, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe9a0, transparent: true, opacity: 0.35,
+        side: THREE.DoubleSide, depthWrite: false,
+      })
+    );
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = 0.06;
+    scene.add(pool);
+    this.pool = pool;
+
+    g.visible = false;
+    pool.visible = false;
+    scene.add(g);
   }
 
   update(dt, playerPos, wanted, t) {
-    const want = wanted >= 3;
-    if (want && !this.active) {
-      this.active = true;
-      this.group.visible = true;
-      this.pool.visible = true;
-    } else if (!want && this.active) {
-      this.active = false;
-      this.group.visible = false;
-      this.pool.visible = false;
+    const time = typeof t === 'number' ? t : (this._t += dt);
+    if (typeof t === 'number') this._t = t;
+    const px = playerPos && typeof playerPos.x === 'number' ? playerPos.x : 0;
+    const pz = playerPos && typeof playerPos.z === 'number' ? playerPos.z : 0;
+    const want = typeof wanted === 'number' ? wanted : 0;
+
+    if (want < 3) {
+      if (this.active) {
+        this.active = false;
+        this.group.visible = false;
+        this.pool.visible = false;
+      }
+      this._mode = 'orbit';
+      this._modeT = 0;
+      return;
     }
-    if (!this.active) return;
-    this.angle += dt * 0.35;
-    const x = playerPos.x + Math.sin(this.angle) * this.radius;
-    const z = playerPos.z + Math.cos(this.angle) * this.radius;
-    const y = this.height + Math.sin(t * 0.7) * 2;
-    this.group.position.set(x, y, z);
-    // Face the player, bank slightly into the turn.
-    this.group.rotation.y = Math.atan2(playerPos.x - x, playerPos.z - z);
-    this.group.rotation.z = 0.12;
-    this.rotor.rotation.y += dt * 22;
-    this.tailRotor.rotation.x += dt * 30;
-    // The cone hangs from the heli, tilted slightly toward the player;
-    // the pool of light on the ground sells the tracking effect.
-    const dx = playerPos.x - x;
-    const dz = playerPos.z - z;
-    this.cone.position.set(dx * 0.12, -22, dz * 0.12);
-    this.cone.rotation.z = -dx * 0.004;
-    this.cone.rotation.x = dz * 0.004;
+    this.active = true;
+    this.group.visible = true;
+    this.pool.visible = true;
+
+    // Orbit / flyover state machine. Frozen entirely while holdAngle set.
+    let height = this.height;
+    let radius = this.radius;
+    if (this.holdAngle === null || this.holdAngle === undefined) {
+      this._modeT += dt;
+      if (this._mode === 'orbit') {
+        this.angle += dt * 0.22; // slow orbit, stays in frame
+        if (this._modeT >= 25) {
+          this._mode = 'flyover';
+          this._modeT = 0;
+        }
+      } else {
+        // Flyover: fast low sweep across the player's view (~4.6 s),
+        // dipping to ~14 and climbing back to orbit height.
+        this.angle += dt * 0.9;
+        const dip = Math.min(1, this._modeT / 1.2);
+        const climb = Math.max(0, (this._modeT - 3.4) / 1.2);
+        height = 28 - 14 * dip + 14 * climb;
+        radius = 22 - 4 * dip + 4 * climb;
+        if (this._modeT >= 4.6) {
+          this._mode = 'orbit';
+          this._modeT = 0;
+        }
+      }
+    } else {
+      this.angle = this.holdAngle;
+      this._mode = 'orbit';
+      this._modeT = 0;
+    }
+
+    const x = px + Math.sin(this.angle) * radius;
+    const z = pz + Math.cos(this.angle) * radius;
+    this.group.position.set(x, height, z);
+    // Nose points along the direction of travel (orbit tangent).
+    this.group.rotation.y = this.angle + Math.PI / 2;
+
+    // Spin the rotors.
+    if (this.rotor) this.rotor.rotation.y += dt * 22;
+    if (this.tailRotor) this.tailRotor.rotation.x += dt * 30;
+
+    // Spotlight cone follows the current height (apex stays at the heli,
+    // base stays on the ground).
+    if (this.cone) {
+      this.cone.scale.y = height / 28;
+      this.cone.position.y = -height / 2;
+    }
+    // Ground pool follows the player.
+    if (this.pool) this.pool.position.set(px, 0.06, pz);
+
+    // Nav lights blink with time; strobe blinks opposite phase.
+    const blink = Math.sin(time * 5) > 0;
+    if (this.navRed) this.navRed.visible = blink;
+    if (this.navGreen) this.navGreen.visible = blink;
+    if (this.strobe) this.strobe.visible = !blink;
   }
 }
 
-// Roadblocks: two SBPD cruisers parked across the road ahead of the
-// player, with a warning when one is close ahead. Managed by Police in
-// main.js via setRoadblocks(wanted, playerPos, heading).
 export class Roadblocks {
   constructor(scene, THREE, makePoliceCar) {
     this.scene = scene;
     this.THREE = THREE;
     this.makePoliceCar = makePoliceCar;
-    this.blocks = []; // { cars: [{mesh, pos}], pos, angle }
+    this.blocks = [];
     this._timer = 0;
+    this._t = 0;
   }
 
   clear() {
-    for (const b of this.blocks) {
-      for (const c of b.cars) this.scene.remove(c.mesh.group);
-    }
+    for (let i = 0; i < this.blocks.length; i++) this._removeBlock(this.blocks[i]);
     this.blocks = [];
+    this._timer = 0;
   }
 
-  // True when a roadblock sits within `range` ahead of the player.
-  ahead(playerPos, heading, range) {
-    for (const b of this.blocks) {
-      const dx = b.pos.x - playerPos.x;
-      const dz = b.pos.z - playerPos.z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < range) {
-        const fx = Math.sin(heading);
-        const fz = Math.cos(heading);
-        if ((dx * fx + dz * fz) / Math.max(0.01, d) > 0.4) return Math.round(d);
-      }
+  _removeBlock(block) {
+    for (let i = 0; i < block.cars.length; i++) {
+      const obj = block.cars[i].obj;
+      if (!obj) continue;
+      if (obj.parent) obj.parent.remove(obj);
+      else if (this.scene) this.scene.remove(obj);
     }
-    return 0;
+  }
+
+  _spawnBlock(playerPos, heading) {
+    const px = playerPos && typeof playerPos.x === 'number' ? playerPos.x : 0;
+    const pz = playerPos && typeof playerPos.z === 'number' ? playerPos.z : 0;
+    const head = typeof heading === 'number' ? heading : 0;
+    // ~70 m ahead of the player.
+    const ax = px + Math.sin(head) * 70;
+    const az = pz + Math.cos(head) * 70;
+    // Snap to the nearest road line.
+    let bestX = 0;
+    let bestZ = 0;
+    let bdX = Infinity;
+    let bdZ = Infinity;
+    for (let i = 0; i <= 10; i++) {
+      const line = -260 + i * 52;
+      const dx = Math.abs(ax - line);
+      if (dx < bdX) { bdX = dx; bestX = line; }
+      const dz = Math.abs(az - line);
+      if (dz < bdZ) { bdZ = dz; bestZ = line; }
+    }
+    let cx;
+    let cz;
+    let carAngle;
+    let alongX; // offset direction of the two cars (along the road)
+    if (bdX <= bdZ) {
+      cx = bestX; cz = az; carAngle = Math.PI / 2; alongX = false;
+    } else {
+      cx = ax; cz = bestZ; carAngle = 0; alongX = true;
+    }
+    const block = { x: cx, z: cz, angle: carAngle, life: 14, cars: [] };
+    const offsets = [-4.5, 4.5];
+    for (let i = 0; i < offsets.length; i++) {
+      let carObj = null;
+      try {
+        carObj = this.makePoliceCar ? this.makePoliceCar() : null;
+      } catch (e) { carObj = null; }
+      if (!carObj) {
+        try { carObj = this.makePoliceCar(cx, cz, carAngle); } catch (e) { carObj = null; }
+      }
+      if (!carObj) continue;
+      const obj = carObj.group || carObj.mesh || carObj;
+      const carX = cx + (alongX ? offsets[i] : 0);
+      const carZ = cz + (alongX ? 0 : offsets[i]);
+      if (obj.position && typeof obj.position.set === 'function') {
+        obj.position.set(carX, 0, carZ);
+      } else if (obj.position) {
+        obj.position.x = carX;
+        obj.position.z = carZ;
+      }
+      if (obj.rotation) obj.rotation.y = carAngle;
+      try { if (carObj && typeof carObj.angle === 'number') carObj.angle = carAngle; } catch (e) {}
+      if (!obj.parent && this.scene) this.scene.add(obj);
+      // Blinking red/blue beacon pair on the roof.
+      const beaconR = new this.THREE.Mesh(
+        new this.THREE.BoxGeometry(0.34, 0.16, 0.3),
+        new this.THREE.MeshBasicMaterial({ color: 0xff2222 })
+      );
+      beaconR.position.set(-0.32, 1.55, 0);
+      obj.add(beaconR);
+      const beaconB = new this.THREE.Mesh(
+        new this.THREE.BoxGeometry(0.34, 0.16, 0.3),
+        new this.THREE.MeshBasicMaterial({ color: 0x2266ff })
+      );
+      beaconB.position.set(0.32, 1.55, 0);
+      obj.add(beaconB);
+      block.cars.push({ obj: obj, mesh: obj, x: carX, z: carZ, beaconR: beaconR, beaconB: beaconB });
+    }
+    if (block.cars.length) this.blocks.push(block);
+    return block;
+  }
+
+  // Distance to the nearest block ahead of the player (within range),
+  // or 0 when there is none.
+  ahead(playerPos, heading, range) {
+    if (!playerPos || !this.blocks.length) return 0;
+    const px = playerPos.x || 0;
+    const pz = playerPos.z || 0;
+    const r = typeof range === 'number' ? range : 120;
+    const head = typeof heading === 'number' ? heading : 0;
+    const fx = Math.sin(head);
+    const fz = Math.cos(head);
+    let best = 0;
+    for (let i = 0; i < this.blocks.length; i++) {
+      const b = this.blocks[i];
+      const dx = b.x - px;
+      const dz = b.z - pz;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d > r) continue;
+      if (d > 0.001 && dx * fx + dz * fz < 0) continue; // behind the player
+      if (best === 0 || d < best) best = d;
+    }
+    return best;
   }
 
   update(dt, wanted, playerPos, heading) {
-    this._timer -= dt;
-    if (wanted < 4) {
-      if (this.blocks.length > 0) this.clear();
-      return;
+    this._t += dt;
+    const w = typeof wanted === 'number'
+      ? wanted
+      : (wanted && (wanted.wanted !== undefined ? wanted.wanted : wanted.stars)) || 0;
+    // Expire old blocks (14 s lifetime).
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const b = this.blocks[i];
+      b.life -= dt;
+      if (b.life <= 0) {
+        this._removeBlock(b);
+        this.blocks.splice(i, 1);
+      }
     }
-    if (this._timer > 0 || this.blocks.length >= 2) return;
-    this._timer = 14;
-    // Place across the road ~70m ahead of the player, snapped to the
-    // nearest street line so the cruisers sit on asphalt.
-    const fx = Math.sin(heading);
-    const fz = Math.cos(heading);
-    let bx = playerPos.x + fx * 70;
-    let bz = playerPos.z + fz * 70;
-    bx = clamp(bx, -HALF + 12, HALF - 12);
-    bz = clamp(bz, -HALF + 12, HALF - 12);
-    // Snap to the nearest street (streets every 52m, offset -260).
-    const snap = (v) => Math.round((v + 260) / 52) * 52 - 260;
-    if (Math.abs(fx) > Math.abs(fz)) bz = snap(bz);
-    else bx = snap(bx);
-    const blockAngle = Math.atan2(fx, fz) + Math.PI / 2;
-    const cars = [];
-    for (const off of [-4.5, 4.5]) {
-      const built = this.makePoliceCar();
-      const cx = bx + Math.cos(blockAngle) * off;
-      const cz = bz + Math.sin(blockAngle) * off;
-      built.group.position.set(cx, 0, cz);
-      built.group.rotation.y = blockAngle;
-      this.scene.add(built.group);
-      cars.push({ mesh: built, pos: { x: cx, z: cz } });
+    // Blink the beacons: red and blue alternate.
+    const phase = Math.floor(this._t * 2.5) % 2 === 0;
+    for (let i = 0; i < this.blocks.length; i++) {
+      const cars = this.blocks[i].cars;
+      for (let j = 0; j < cars.length; j++) {
+        if (cars[j].beaconR) cars[j].beaconR.visible = phase;
+        if (cars[j].beaconB) cars[j].beaconB.visible = !phase;
+      }
     }
-    this.blocks.push({ cars, pos: { x: bx, z: bz }, angle: blockAngle });
-    if (this.blocks.length > 2) {
-      const old = this.blocks.shift();
-      for (const c of old.cars) this.scene.remove(c.mesh.group);
+    // At wanted >= 4, keep up to 2 blocks, (re)spawning on a 14 s timer.
+    if (w >= 4 && playerPos) {
+      this._timer -= dt;
+      if (this.blocks.length < 2 && this._timer <= 0) {
+        this._spawnBlock(playerPos, heading);
+        this._timer = 14;
+      }
     }
   }
 
-  // Roadblock cars are solid: push the player's car out of them.
+  // Push a car position out of any roadblock car it overlaps.
+  // Returns true when a collision happened.
   resolve(carPos, radius) {
-    for (const b of this.blocks) {
-      for (const c of b.cars) {
-        const d = dist2(carPos.x, carPos.z, c.pos.x, c.pos.z);
-        if (d < 3.4 + radius && d > 0.01) {
-          const push = (3.4 + radius - d);
-          carPos.x += ((carPos.x - c.pos.x) / d) * push;
-          carPos.z += ((carPos.z - c.pos.z) / d) * push;
-          return true;
+    if (!carPos || !this.blocks.length) return false;
+    const r = typeof radius === 'number' ? radius : 2;
+    let hit = false;
+    for (let i = 0; i < this.blocks.length; i++) {
+      const cars = this.blocks[i].cars;
+      for (let j = 0; j < cars.length; j++) {
+        const c = cars[j];
+        const dx = carPos.x - c.x;
+        const dz = carPos.z - c.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        const min = r + 2.0;
+        if (d < min && d > 0.0001) {
+          const push = (min - d) / d;
+          carPos.x += dx * push;
+          carPos.z += dz * push;
+          hit = true;
+        } else if (d <= 0.0001) {
+          carPos.x += min;
+          hit = true;
         }
       }
     }
-    return false;
+    return hit;
   }
 }
