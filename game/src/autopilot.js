@@ -242,11 +242,11 @@ function stageShot(game, n) {
       patchRoadblockMinimap(game);
     }
   } else if (n === 2) {
-    putPlayerInCar(game, -130, 296, Math.PI / 2, 10);
+    putPlayerInCar(game, -130, 299, Math.PI / 2, 10);
     try { if (progress) progress.addRep(180); } catch (e) {}
     startMissionByName(game, 'Neon Street Race');
     clearDialogue(game);
-    game.camYaw = -Math.PI / 2; game.camDist = 9;
+    game.camYaw = -Math.PI / 2; game.camDist = 8;
     try {
       const pedSpots = [[-124, 290], [-119, 302], [-114, 290], [-104, 302], [-98, 290], [-92, 302], [-86, 290], [-80, 302]];
       const peds = (game.peds && game.peds.list) || [];
@@ -295,7 +295,7 @@ function stageShot(game, n) {
       if (line && game.hud && game.hud.showDialogue) game.hud.showDialogue(line.name, line.text);
     } catch (e) {}
     spawnEnemiesNear(game, 0, -20, [[-6, -5], [6, -6], [-5, -9], [5, -10]]);
-    game.camYaw = 0.15; game.camDist = 4.5;
+    game.camYaw = 0.15; game.camDist = 5.5;
     try { stageShotFx(game); } catch (e) { log('stageShotFx failed: ' + (e && e.message ? e.message : e)); }
   } else if (n === 4) {
     putPlayerInCar(game, 0, -240, 0, 26);
@@ -344,6 +344,22 @@ function stageShot(game, n) {
         log('roadblock moved closer: z=-216');
       }
     } catch (e) { log('roadblock move failed: ' + (e && e.message ? e.message : e)); }
+    try {
+      const THREE = game.THREE || (typeof window !== 'undefined' ? window.THREE : undefined);
+      if (THREE && game.scene) {
+        const coneMat = new THREE.MeshLambertMaterial({ color: 0xff6a1a });
+        const baseMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+        for (const cx of [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]) {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 8), coneMat);
+          cone.position.set(cx, 0.65, -232);
+          game.scene.add(cone);
+          const base = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.6), baseMat);
+          base.position.set(cx, 0.06, -232);
+          game.scene.add(base);
+        }
+        log('shot4 cones: 6 ahead of player car z=-232');
+      }
+    } catch (e) { log('shot4 cones failed: ' + (e && e.message ? e.message : e)); }
   } else {
     log('unknown shot: ' + n);
   }
