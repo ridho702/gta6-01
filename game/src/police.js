@@ -5,8 +5,16 @@
 import { RNG, clamp, dist2 } from './util.js';
 import { HALF } from './city.js';
 import { createCarMesh } from './vehicles.js';
+import { Roadblocks } from './airunit.js';
 
 const STAR_HEAT = [0, 25, 55, 95, 140, 190]; // heat needed for each star count
+
+// SBPD unit call signs and their dispatch roles.
+const UNIT_NAMES = [
+  'Unit 7 — Vega', 'Unit 12 — Rook', 'Unit 3 — Marlowe', 'Unit 21 — Kestrel',
+  'Unit 9 — Boone', 'Unit 16 — Sable', 'Unit 5 — Harrow', 'Unit 28 — Pike',
+];
+const UNIT_ROLES = ['PURSUE', 'RAMMING', 'CLOSING IN', 'ROADBLOCK', 'SPOTLIGHT', 'FLANKING'];
 
 export class Police {
   constructor(scene, THREE, seed) {
@@ -25,6 +33,15 @@ export class Police {
   addHeat(n) {
     this.heat = clamp(this.heat + n, 0, 220);
     this._recalcWanted();
+  }
+
+  // Mira — Swap Plates: drop one wanted star (heat falls just below the
+  // threshold for the current star count).
+  dropStar() {
+    if (this.wanted <= 0) return false;
+    this.heat = STAR_HEAT[this.wanted] - 1;
+    this._recalcWanted();
+    return true;
   }
 
   clear() {
@@ -98,6 +115,8 @@ export class Police {
     built.group.position.set(x, 0, z);
     this.scene.add(built.group);
     const car = { mesh: built, pos: { x, z }, angle: 0, speed: 0 };
+    car.unitName = UNIT_NAMES[this.cars.length % UNIT_NAMES.length];
+    car.unitRole = UNIT_ROLES[this.cars.length % UNIT_ROLES.length];
     this.cars.push(car);
     return car;
   }
@@ -131,7 +150,10 @@ export class Police {
         const built = this._makePoliceCarMesh();
         built.group.position.set(sp.x, 0, sp.z);
         this.scene.add(built.group);
-        this.cars.push({ mesh: built, pos: sp, angle: 0, speed: 0 });
+        const car = { mesh: built, pos: sp, angle: 0, speed: 0 };
+        car.unitName = UNIT_NAMES[this.cars.length % UNIT_NAMES.length];
+        car.unitRole = UNIT_ROLES[this.cars.length % UNIT_ROLES.length];
+        this.cars.push(car);
       }
       while (this.cops.length < wantCops) {
         const sp = this._spawnPointNear(pp, 25, 45);

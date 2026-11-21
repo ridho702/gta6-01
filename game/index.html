@@ -11,24 +11,55 @@
 
 <div id="hud">
   <div id="hud-top-left">
+    <div id="hud-mission">
+      <div id="hud-mission-title">MISSION 1/10</div>
+      <div id="hud-mission-stage"></div>
+      <div id="hud-mission-bar"><div id="hud-mission-fill"></div></div>
+      <div id="hud-mission-timer"></div>
+    </div>
     <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
     <div id="hud-cash-row"><span id="hud-cash">$250</span><span id="hud-ammo">Ammo 48</span></div>
+    <div id="hud-dispatch" style="display:none">
+      <div id="hud-dispatch-title">SBPD DISPATCH</div>
+      <div id="hud-dispatch-list"></div>
+    </div>
   </div>
   <div id="hud-top-right">
-    <div id="hud-clock">08:00</div>
+    <div id="hud-clock">18:47</div>
     <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-crew">MIRA [Z] READY</div>
+    <div id="hud-weapons"></div>
+    <div id="hud-rank">
+      <div id="hud-rank-name">HUSTLER</div>
+      <div id="hud-rank-bar"><div id="hud-rank-fill"></div></div>
+      <div id="hud-rank-rep">REP 0 / 150</div>
+    </div>
+  </div>
+  <div id="hud-alert" style="display:none"></div>
+  <div id="hud-bottom-left">
+    <div id="hud-district">DOWNTOWN SOLMAR</div>
+    <div id="hud-radio">♪ BAY FM 88.5</div>
   </div>
   <div id="hud-bottom-center">
     <div id="hud-objective">Press Start to begin the story</div>
     <div id="hud-dist"></div>
+    <div id="hud-shophint"></div>
   </div>
   <div id="hud-bottom-right">
+    <div id="hud-car" style="display:none">
+      <div id="hud-car-name">Meridian LX</div>
+      <div id="hud-car-cond">CONDITION 100%</div>
+      <div id="hud-car-gear">GEAR N</div>
+    </div>
     <canvas id="hud-minimap" width="180" height="180"></canvas>
     <div id="hud-speed">0 km/h</div>
   </div>
   <div id="hud-dialogue" style="display:none">
-    <div id="hud-dialogue-name"></div>
-    <div id="hud-dialogue-text"></div>
+    <canvas id="hud-portrait" width="72" height="72"></canvas>
+    <div id="hud-dialogue-body">
+      <div id="hud-dialogue-name"></div>
+      <div id="hud-dialogue-text"></div>
+    </div>
   </div>
   <div id="hud-toast" style="display:none"></div>
 </div>
@@ -36,12 +67,17 @@
 <div id="screen-start" class="screen" style="display:none">
   <div class="panel">
     <h1>SOLMAR BAY</h1>
-    <p class="tagline">An open-world crime story in a sun-soaked coastal city.</p>
+    <p class="tagline">An open-world crime story in a sun-soaked coastal city at golden hour.</p>
     <p>Dana Reyes is back in Solmar Bay with $250 and a debt to Marlow.
-    Six jobs stand between Dana and freedom — steal cars, run couriers,
-    crack a vault, and make the final escape to the pier.</p>
+    Ten jobs stand between Dana and freedom — steal cars, race Vex through
+    the neon streets, fight the Vultures, crack a vault, and make the final
+    escape to the pier.</p>
+    <p class="missions-list">MISSIONS — 1 Fresh Start · 2 Hot Wheels · 3 Courier Run · 4 Dockside Trouble ·
+    5 The Getaway · 6 Neon Street Race · 7 The Collector · 8 Vulture War ·
+    9 Harbor Heat · 10 The Big Score</p>
     <p class="controls">WASD move / drive &nbsp;·&nbsp; Shift sprint &nbsp;·&nbsp; E enter car / interact
     &nbsp;·&nbsp; Mouse drag: camera &nbsp;·&nbsp; Click: shoot &nbsp;·&nbsp; F punch
+    &nbsp;·&nbsp; 1–4 weapons &nbsp;·&nbsp; R radio &nbsp;·&nbsp; Z Mira: Swap Plates
     &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; H horn &nbsp;·&nbsp; C camera &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</p>
     <button id="btn-start">Start Story</button>
     <button id="btn-continue">Continue</button>
@@ -51,7 +87,9 @@
 <div id="screen-pause" class="screen" style="display:none">
   <div class="panel">
     <h1>PAUSED</h1>
-    <p>Your progress is saved.</p>
+    <p>Your progress is saved. Missions, REP, weapons and garage tunes are kept.</p>
+    <p class="controls">1–4 weapons · R radio · Z Mira: Swap Plates (drops 1 wanted star, 60s cooldown) ·
+    E shops: Solmar Arms (weapons) &amp; Marlow's Garage (repair / tune / armor)</p>
     <button id="btn-resume">Resume</button>
   </div>
 </div>
@@ -59,7 +97,7 @@
 <div id="screen-wasted" class="screen" style="display:none">
   <div class="panel">
     <h1>WASTED</h1>
-    <p>Dana wakes up at the hospital, half the cash gone.</p>
+    <p>Dana wakes up at the hospital, half the cash gone. The story mission restarts — REP and weapons stay yours.</p>
     <button id="btn-respawn">Respawn</button>
   </div>
 </div>
@@ -67,7 +105,7 @@
 <div id="screen-busted" class="screen" style="display:none">
   <div class="panel">
     <h1>BUSTED</h1>
-    <p>The Solmar Bay police take their cut. $100 fine.</p>
+    <p>The Solmar Bay police take their cut. $100 fine. Mira's plates can drop the heat before it comes to this — press Z.</p>
     <button id="btn-respawn-busted">Respawn</button>
   </div>
 </div>
@@ -75,8 +113,8 @@
 <div id="screen-complete" class="screen" style="display:none">
   <div class="panel">
     <h1>THE BIG SCORE</h1>
-    <p>Dana made it to the pier with the case. The debt is paid —
-    Solmar Bay is yours now. Free roam unlocked.</p>
+    <p>Dana made it to the pier with the case. All ten missions done, the debt is paid —
+    Solmar Bay is yours now. Free roam unlocked — keep the rank climbing to BAY KING.</p>
     <button id="btn-keep-playing">Keep Playing</button>
     <button id="btn-new-game">New Game</button>
   </div>

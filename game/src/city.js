@@ -271,6 +271,12 @@ export function buildCity(THREE) {
     addBuilding(c.x, c.z, 36, 12, 30, '#9a8a6a', 2, 1);
     addSign('SOLMAR MALL', '#4a3a22', '#ffffff', c.x, 14, c.z + 15.4, 30, 0);
   }
+  // Solmar Arms gun shop (4,6): dark storefront, red neon sign.
+  {
+    const c = lm('gunShop', 4, 6);
+    addBuilding(c.x, c.z, 20, 8, 16, '#3a2a2a', 2, 1);
+    addSign('SOLMAR ARMS', '#200808', '#ff5040', c.x, 10, c.z + 8.4, 18, 0);
+  }
   // Safehouse (0,8): small house.
   {
     const c = lm('safehouse', 0, 8);
@@ -366,7 +372,7 @@ export function buildCity(THREE) {
   }
 
   // ---------- ordinary blocks: 1-4 buildings each ----------
-  const landmarkBlocks = new Set(['1,1', '5,5', '8,2', '3,6', '2,7', '0,8', '9,4', '9,5']);
+  const landmarkBlocks = new Set(['1,1', '5,5', '8,2', '3,6', '2,7', '0,8', '9,4', '9,5', '4,6']);
   const parkBlocks = new Set(['4,2', '7,7']);
   for (let bx = 0; bx < 10; bx++) {
     for (let bz = 0; bz < 10; bz++) {
@@ -429,9 +435,111 @@ export function buildCity(THREE) {
     group.add(lamp);
   }
 
+  // ---------- palms, beach umbrellas, ferris wheel, neon ----------
+  // Palm trees: curved trunks with a crown of fronds, along the beach.
+  const palmTrunkMat = new THREE.MeshLambertMaterial({ color: 0x7a5a34 });
+  const palmLeafMat = new THREE.MeshLambertMaterial({ color: 0x2f8a3a });
+  function addPalm(x, z, s) {
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, 5.5, 7), palmTrunkMat);
+    trunk.position.y = 2.75;
+    trunk.rotation.z = 0.12;
+    g.add(trunk);
+    for (let i = 0; i < 6; i++) {
+      const frond = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.4, 4), palmLeafMat);
+      const a = (i / 6) * Math.PI * 2;
+      frond.position.set(Math.cos(a) * 1.3, 5.6, Math.sin(a) * 1.3);
+      frond.rotation.z = Math.cos(a) * 1.1;
+      frond.rotation.x = -Math.sin(a) * 1.1;
+      g.add(frond);
+    }
+    g.position.set(x, 0, z);
+    g.scale.setScalar(s);
+    group.add(g);
+  }
+  for (let x = -240; x <= 240; x += 22) {
+    addPalm(x + rng.range(-4, 4), 268 + rng.range(-2, 6), rng.range(0.9, 1.3));
+  }
+  // A second row of palms along the boardwalk avenue.
+  for (let x = -234; x <= 234; x += 52) {
+    addPalm(x, 254, rng.range(0.8, 1.1));
+  }
+  // Beach umbrellas + loungers on the sand.
+  const umbrellaCols = [0xe84a5f, 0x2a9ad8, 0xf2b134, 0x7ac74f, 0x9a5fd0];
+  const chairMat = new THREE.MeshLambertMaterial({ color: 0xd8d0c0 });
+  for (let i = 0; i < 18; i++) {
+    const ux = rng.range(-230, 230);
+    const uz = rng.range(272, 296);
+    if (Math.abs(ux) < 10) continue; // keep the pier clear
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6), poleMat);
+    pole.position.set(ux, 1.3, uz);
+    group.add(pole);
+    const canopy = new THREE.Mesh(
+      new THREE.ConeGeometry(2.2, 0.9, 8),
+      new THREE.MeshLambertMaterial({ color: umbrellaCols[i % umbrellaCols.length] }),
+    );
+    canopy.position.set(ux, 2.9, uz);
+    group.add(canopy);
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 2.0), chairMat);
+    chair.position.set(ux + 2.6, 0.35, uz);
+    chair.rotation.y = rng.range(0, Math.PI);
+    group.add(chair);
+  }
+  // Ferris wheel on the pier headland, west of the pier.
+  let ferrisWheel = null;
+  {
+    const wheelGroup = new THREE.Group();
+    const frameMat = new THREE.MeshLambertMaterial({ color: 0xd8d8e0 });
+    const neonMat = new THREE.MeshBasicMaterial({ color: 0xff5fa0 });
+    // Two support legs.
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(1.2, 16, 1.2), frameMat);
+      leg.position.set(sx * 5, 8, 0);
+      leg.rotation.z = -sx * 0.35;
+      wheelGroup.add(leg);
+    }
+    // The wheel itself, rotating around the z axis.
+    const wheel = new THREE.Group();
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(11, 0.5, 8, 28), frameMat);
+    wheel.add(rim);
+    const rimNeon = new THREE.Mesh(new THREE.TorusGeometry(11, 0.22, 6, 28), neonMat);
+    rimNeon.position.z = 0.4;
+    wheel.add(rimNeon);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.4, 22, 0.4), frameMat);
+      spoke.rotation.z = a;
+      wheel.add(spoke);
+      // Gondola cabin at each rim point.
+      const cabin = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 1.8, 1.8),
+        new THREE.MeshLambertMaterial({ color: umbrellaCols[i % umbrellaCols.length] }),
+      );
+      cabin.position.set(Math.cos(a) * 11, Math.sin(a) * 11, 0);
+      wheel.add(cabin);
+    }
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 1.6, 12), neonMat);
+    hub.rotation.x = Math.PI / 2;
+    wheel.add(hub);
+    wheel.position.y = 15;
+    wheelGroup.add(wheel);
+    ferrisWheel = wheel;
+    // Face the wheel toward the beach road (east-west) so drivers along
+    // the beach see the neon rim face-on instead of edge-on.
+    wheelGroup.rotation.y = Math.PI / 2;
+    wheelGroup.position.set(-64, 0, 282);
+    group.add(wheelGroup);
+    addCollider(-76, 272, -52, 292);
+  }
+  // Neon signs on landmark faces (MeshBasic = glows at dusk).
+  addSign('CASINO', '#1a0a2a', '#ff5fd0', -130, 15, 145.6, 22, 0);
+  addSign('HOTEL LUNA', '#0a1a2a', '#5fd0ff', -182, 21, -170.4, 20, 0);
+  addSign('TACOS', '#2a1a08', '#ffb040', -78, 11, 87.6, 14, 0);
+
   function update(dt, t) {
     oceanTex.offset.y = (t * 0.015) % 1;
     oceanTex.offset.x = (t * 0.008) % 1;
+    if (ferrisWheel) ferrisWheel.rotation.z += dt * 0.12;
   }
 
   return {

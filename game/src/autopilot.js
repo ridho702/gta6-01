@@ -39,62 +39,68 @@ export function applyAutopilot(game) {
   }
 
   if (shot === '1') {
-    // Police chase: the player fleeing up the central avenue, four stars.
-    // Heat 185 stays at four stars after a few seconds of cool-off.
+    // Police chase at golden hour: the player fleeing up the central
+    // avenue in the Comet GT, four stars, AIR-1 overhead and a roadblock
+    // ahead. The dispatch panel, alert banner and heli sell the chase.
     putPlayerInCar(game, 0, 120, Math.PI, 24);
-    game.police.addHeat(185);
+    game.police.addHeat(185); // 4 stars with decay headroom (threshold 140)
     game.police._spawnTimer = 0;
-    game.missions.startMission(4);
+    game.progress.addRep(500); // FIXER rank for a full HUD
+    game.progress.owned.smg = true;
+    game.progress.ammo.smg = 120;
+    game.missions.startMission(8); // Harbor Heat — escape energy
     clearDialogue(game);
     // A three-quarter camera angle so the chasing police read in frame.
     game.camYaw = 0.55;
+    game.camDist = 10;
   } else if (shot === '2') {
-    // City driving: cruising east on a cross street, no heat.
-    putPlayerInCar(game, -120, 0, Math.PI / 2, 22);
-    game.missions.startMission(1);
+    // Golden-hour beach drive: cruising east along Boardwalk Beach past
+    // the palms and the neon ferris wheel, radio on, no heat. The car
+    // starts just west of the wheel so it stays ahead in frame, on the
+    // ocean-side lane clear of the pines.
+    putPlayerInCar(game, -130, 296, Math.PI / 2, 10);
+    game.progress.addRep(180); // RUNNER rank
+    game.missions.startMission(5); // Neon Street Race
     clearDialogue(game);
     game.camYaw = -Math.PI / 2;
+    game.camDist = 8;
   } else if (shot === '3') {
-    // On foot downtown, looking up the avenue toward the bank tower.
+    // On-foot shootout downtown with the SMG: Vultures closing in, Mira
+    // talking in the dialogue box, two stars on the board.
     game.player.pos.x = 0;
     game.player.pos.z = -20;
     game.player.angle = Math.PI;
     game.camYaw = 0.45;
-    game.camDist = 8;
-    game.missions.startMission(0);
-    clearDialogue(game);
+    game.camDist = 7;
+    game.progress.owned.smg = true;
+    game.progress.ammo.smg = 120;
+    game.progress.selectWeapon('smg');
+    game.progress.addRep(420); // FIXER rank
+    game.missions.startMission(7); // Vulture War — keep Mira's intro dialogue visible
+    game.missions.dialogueIdx = 1; // show Mira's line ("I will watch the exits…")
+    game.hud.showDialogue(game.missions.dialogue[1].name, game.missions.dialogue[1].text);
+    game._holdDialogue = true; // freeze the dialogue box for the screenshot
+    // Vultures closing in on the player's downtown spot (north of the
+    // player, ahead of the camera, close enough to read in frame).
+    for (const [dx, dz] of [[-6, -12], [6, -16], [0, -21], [-12, -18]]) {
+      game.combat.spawnEnemy(game.player.pos.x + dx, game.player.pos.z + dz);
+    }
+    game.police.addHeat(55);
   } else if (shot === '4') {
-    // Docks shootout: Vultures closing in, one star on the board.
-    const d = game.city.landmarks.docks;
-    game.player.pos.x = d.x - 18;
-    game.player.pos.z = d.z + 6;
-    game.player.angle = Math.PI / 2;
-    game.camYaw = -Math.PI / 2 + 0.5;
-    game.camDist = 10;
-    game.missions.startMission(3);
-    game.missions.stage = 1;
+    // The final escape: five stars at the airfield, the case in hand,
+    // AIR-1 circling and roadblocks on the road to the pier.
+    putPlayerInCar(game, 0, -240, 0, 26);
+    game.police.addHeat(220); // 5 stars with decay headroom (threshold 190)
+    game.police._spawnTimer = 0;
+    game.progress.addRep(950); // SHOT CALLER rank
+    game.progress.owned.shotgun = true;
+    game.progress.ammo.shotgun = 24;
+    game.missions.startMission(9); // The Big Score
+    game.missions.stage = 3;
     game.missions._beginStage();
     clearDialogue(game);
-    game.police.addHeat(25);
-    // Fire one shot toward the nearest Vulture for a live tracer.
-    const enemies = game.combat.livingEnemies();
-    if (enemies.length > 0) {
-      let best = enemies[0];
-      let bestD = Infinity;
-      for (const e of enemies) {
-        const dd = dist2(game.player.pos.x, game.player.pos.z, e.pos.x, e.pos.z);
-        if (dd < bestD) {
-          bestD = dd;
-          best = e;
-        }
-      }
-      const o = { x: game.player.pos.x, y: 1.5, z: game.player.pos.z };
-      const dir = { x: best.pos.x - o.x, y: 0, z: best.pos.z - o.z };
-      const len = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
-      dir.x /= len;
-      dir.z /= len;
-      game.combat.shoot(o, dir, 60, enemies);
-    }
+    game.camYaw = Math.PI;
+    game.camDist = 11;
   }
 
   if (selftest) {
@@ -106,7 +112,7 @@ export function applyAutopilot(game) {
         trafficCars: game.traffic.cars.length === 14,
         parkedCars: game.traffic.parked.length === 12,
         pedestrians: game.peds.list.length === 26,
-        missions: game.missions.defs.length === 6,
+        missions: game.missions.defs.length === 10,
         playerAlive: game.player.health > 0,
       };
       checks.errors = window.__errors || [];

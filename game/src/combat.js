@@ -46,8 +46,10 @@ export class Combat {
   }
 
   // Fire a hitscan shot. targets are { pos:{x,y,z}, radius, health, onHit }.
-  // Returns { hit, point, target, dist }.
-  shoot(origin, dir, maxDist, targets) {
+  // Returns { hit, point, target, dist }. Damage is per-weapon (the
+  // shotgun calls this once per pellet).
+  shoot(origin, dir, maxDist, targets, damage) {
+    const dmg = damage || 34;
     // Nearest wall hit caps the range.
     let wallDist = maxDist;
     for (const c of this.colliders) {
@@ -81,7 +83,7 @@ export class Combat {
     this._tracer(origin, end);
     this._burst(end);
     if (best) {
-      best.health -= 34;
+      best.health -= dmg;
       if (best.health <= 0) {
         best.alive = false;
         best.mesh.visible = false;

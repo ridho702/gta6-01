@@ -93,19 +93,27 @@ export class AudioEngine {
     src.stop(t0 + dur + 0.05);
   }
 
+  // Switch the music groove to a radio station's bass line + tempo.
+  // Stations come from progress.js (STATIONS); the HUD shows now-playing.
+  setStation(station) {
+    if (!station) return;
+    this._bassPattern = station.bass;
+    this._bpm = station.bpm;
+  }
+
   // ---- music: 16-step funk groove at 100 BPM, scheduled ahead ----
   startMusic() {
     if (!this.ctx || this._musicTimer) return;
     this._step = 0;
     this._nextTime = this.ctx.currentTime + 0.1;
-    const stepDur = 60 / 100 / 4; // 16th notes at 100 BPM
-    // Bass line (Hz) across one bar, 0 = rest.
-    const bass = [55, 0, 55, 0, 65.41, 0, 55, 0, 49, 0, 49, 0, 58.27, 0, 73.42, 0];
-    // Chord stabs (Hz triples) on the off-beats.
-    const chords = { 4: [220, 261.63, 329.63], 10: [196, 246.94, 293.66], 14: [220, 261.63, 329.63] };
     this._musicTimer = window.setInterval(() => {
       if (!this.ctx) return;
       while (this._nextTime < this.ctx.currentTime + 0.25) {
+        // Read the station live so switching radio (KeyR) retunes the groove.
+        const stepDur = 60 / (this._bpm || 100) / 4; // 16th notes
+        const bass = this._bassPattern || [55, 0, 55, 0, 65.41, 0, 55, 0, 49, 0, 49, 0, 58.27, 0, 73.42, 0];
+        // Chord stabs (Hz triples) on the off-beats.
+        const chords = { 4: [220, 261.63, 329.63], 10: [196, 246.94, 293.66], 14: [220, 261.63, 329.63] };
         const s = this._step % 16;
         const t = this._nextTime;
         if (bass[s]) {

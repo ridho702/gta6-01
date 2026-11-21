@@ -3,7 +3,7 @@
 // (menu / playing / paused / wasted / busted). The game is a plain ES
 // module over the vendored three.js global; it loads no network resources.
 
-import { RNG, clamp } from './util.js';
+import { RNG, clamp, lerpAngle } from './util.js';
 import { Input } from './input.js';
 import { AudioEngine } from './audio.js';
 import { buildCity } from './city.js';
@@ -16,6 +16,9 @@ import { Missions } from './missions.js';
 import { HUD } from './hud.js';
 import { loadSave, saveGame, clearSave } from './save.js';
 import { applyAutopilot } from './autopilot.js';
+import { Progress, STATIONS, WEAPONS } from './progress.js';
+import { AirUnit, Roadblocks } from './airunit.js';
+import { Shops } from './shops.js';
 
 const THREE = window.THREE;
 
@@ -31,16 +34,21 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x9fc8e8);
-scene.fog = new THREE.Fog(0xbfd9e8, 220, 720);
+// Golden hour: a purple-orange dusk sky over the bay.
+scene.background = new THREE.Color(0x8a5a8a);
+scene.fog = new THREE.Fog(0xc07850, 200, 700);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1600);
 
-const hemi = new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.95);
+// Low warm sun on the western horizon + a violet dusk fill.
+const hemi = new THREE.HemisphereLight(0xd8a0c8, 0x5a4a3a, 0.85);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffe8c0, 1.35);
-sun.position.set(150, 230, 90);
+const sun = new THREE.DirectionalLight(0xffb060, 1.6);
+sun.position.set(-220, 55, 140);
 scene.add(sun);
+const duskFill = new THREE.DirectionalLight(0x8a7aff, 0.35);
+duskFill.position.set(120, 80, -160);
+scene.add(duskFill);
 
 // ---------- systems ----------
 const rng = new RNG(2026);
@@ -56,6 +64,9 @@ const player = new Player(scene, THREE, { x: 150, z: -130 });
 const police = new Police(scene, THREE, 999);
 const combat = new Combat(scene, THREE, city.colliders);
 
+const progress = new Progress();
+const airUnit = new AirUnit(scene, THREE);
+const roadblocks = new Roadblocks(scene, THREE, () => police._makePoliceCarMesh());
 const game = {
   THREE,
   scene,
@@ -70,10 +81,13 @@ const game = {
   hud,
   audio,
   input,
-  clockMinutes: 480, // 08:00
+  progress,
+  airUnit,
+  roadblocks,
+  clockMinutes: 1127, // 18:47 — golden hour
   camYaw: 0.6,
-  camPitch: 0.42,
-  camDist: 9,
+  camPitch: 0.3,
+  camDist: 7.5,
   camFar: false,
   state: 'menu',
   demoOrbit: false,
@@ -84,6 +98,10 @@ const game = {
 };
 const missions = new Missions(game);
 game.missions = missions;
+player.progress = progress;
+const shops = new Shops(game);
+game.shops = shops;
+audio.setStation(STATIONS[0]);
 
 // ---------- pickups: health (green), ammo (yellow), cash (gold) ----------
 const pickups = [];
@@ -125,8 +143,12 @@ function updatePickups(dt) {
         player.heal(40);
         hud.toast('Health +40');
       } else if (p.kind === 'ammo') {
-        player.ammo += 24;
-        hud.toast('Ammo +24');
+        const w = progress.currentWeapon();
+        if (w.id !== 'fists') {
+          progress.ammo[w.id] += 24;
+          player.ammo = progress.ammo[w.id];
+        }
+        hud.toast('Ammo +24 (' + w.name + ')');
       } else {
         const amount = 50 + Math.floor(rng.next() * 60);
         player.cash += amount;
@@ -152,6 +174,14 @@ function saveNow() {
     missionIdx: Math.min(missions.idx, missions.defs.length - 1),
     health: player.health,
     pos: { x: pp.x, z: pp.z },
+    rep: progress.rep,
+    rankIdx: progress.rankIdx,
+    owned: progress.owned,
+    ammo: progress.ammo,
+    weapon: progress.weapon,
+    tune: progress.tune,
+    armor: progress.armor,
+    station: progress.station,
   });
 }
 
@@ -173,6 +203,7 @@ function respawn(atHospital) {
   }
   player.mesh.position.set(player.pos.x, 0, player.pos.z);
   police.clear();
+  roadblocks.clear();
   hud.hideOverlays();
   game.state = 'playing';
   if (atHospital) missions.startMission(missions.idx);
@@ -192,6 +223,17 @@ function startGame(opts) {
     player.pos.x = save.pos ? save.pos.x : 150;
     player.pos.z = save.pos ? save.pos.z : -130;
     player.mesh.position.set(player.pos.x, 0, player.pos.z);
+    if (typeof save.rep === 'number') progress.rep = save.rep;
+    if (typeof save.rankIdx === 'number') progress.rankIdx = save.rankIdx;
+    if (save.owned) Object.assign(progress.owned, save.owned);
+    if (save.ammo) Object.assign(progress.ammo, save.ammo);
+    if (save.weapon && progress.owned[save.weapon]) progress.weapon = save.weapon;
+    if (typeof save.tune === 'number') progress.tune = save.tune;
+    if (typeof save.armor === 'number') progress.armor = save.armor;
+    if (typeof save.station === 'number') {
+      progress.station = save.station % STATIONS.length;
+      audio.setStation(progress.stationNow());
+    }
     missions.idx = save.missionIdx || 0;
     missions.startMission(missions.idx);
   } else if (missions.state === 'idle') {
@@ -244,6 +286,11 @@ function updateCamera(dt) {
   game.camYaw -= drag.dx * 0.005;
   game.camPitch = clamp(game.camPitch + drag.dy * 0.004, 0.08, 1.05);
   if (game.demoOrbit) game.camYaw += dt * 0.12;
+  // Chase cam: while driving, the camera eases back behind the car so the
+  // road ahead stays in frame; the player can still drag to look around.
+  if (player.mode === 'car' && player.car && Math.abs(drag.dx) < 1) {
+    game.camYaw = lerpAngle(game.camYaw, player.car.angle + Math.PI, Math.min(1, dt * 1.4));
+  }
   const target = player.mode === 'car' && player.car ? player.car.pos : player.pos;
   const dist = game.camDist * (game.camFar ? 1.6 : 1);
   const cp = Math.cos(game.camPitch);
@@ -291,12 +338,46 @@ function animate() {
     }
     if (input.wasPressed('KeyC')) game.camFar = !game.camFar;
     if (input.wasPressed('KeyH') && player.mode === 'car') audio.horn();
+    // Weapon slots 1-4 (only owned weapons equip).
+    const slotKeys = { Digit1: 'fists', Digit2: 'pistol', Digit3: 'smg', Digit4: 'shotgun' };
+    for (const [code, id] of Object.entries(slotKeys)) {
+      if (input.wasPressed(code)) {
+        if (progress.selectWeapon(id)) {
+          hud.toast(progress.currentWeapon().name + ' equipped');
+          audio.blip();
+        } else {
+          const w = WEAPONS.find((x) => x.id === id);
+          hud.toast((w ? w.name : id.toUpperCase()) + ' — LOCKED: buy it at Solmar Arms ($' + (w ? w.price : 0) + ')');
+        }
+      }
+    }
+    // Radio: R cycles the three stations; the groove retunes live.
+    if (input.wasPressed('KeyR')) {
+      const st = progress.nextStation();
+      audio.setStation(st);
+      hud.toast('♪ ' + st.name + ' — ' + st.show + ' · ' + progress.songNow());
+    }
+    // Crew ability: Mira — Swap Plates (Z): drop one wanted star, 60s cooldown.
+    if (input.wasPressed('KeyZ')) {
+      if (progress.useCrew()) {
+        if (police.dropStar()) {
+          hud.toast('Mira swapped your plates — heat dropped a star');
+          audio.blip();
+        } else {
+          hud.toast('Mira: no heat on you right now — plates already clean');
+        }
+      } else {
+        hud.toast('Swap Plates recharging: ' + Math.ceil(progress.crewCooldown) + 's');
+      }
+    }
 
     // Enter / exit cars (E). Mission stages that own the E key
-    // (steal, grab, hold) and open dialogue handle it themselves.
+    // (steal, grab, hold) and open dialogue handle it themselves, and the
+    // shops module owns E near Solmar Arms / Marlow's Garage.
     const st = missions.currentStage();
     const dialogueOpen = missions.dialogueIdx < missions.dialogue.length;
-    const eOwned = dialogueOpen || (st && ['steal', 'grab', 'hold'].includes(st.type));
+    const eOwned = dialogueOpen || shops.open || shops._nearShop(player.getPos()) ||
+      (st && ['steal', 'grab', 'hold'].includes(st.type));
     if (!eOwned && input.wasPressed('KeyE')) {
       if (player.mode === 'foot') {
         const near = traffic.nearestParked(player.pos, 4.5);
@@ -306,22 +387,44 @@ function animate() {
       }
     }
 
-    // Shooting (left mouse) and punching (F), on foot only.
+    // Shooting (left mouse) and punching (F), on foot only. Fire rate,
+    // damage, spread and pellets come from the equipped weapon; ammo is
+    // tracked per weapon in Progress. The SMG fires while held.
     if (player.mode === 'foot') {
-      if (input.clicked() && player.ammo > 0) {
-        player.ammo--;
-        const origin = { x: player.pos.x, y: 1.5, z: player.pos.z };
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        // Slight spread.
-        dir.x += (Math.random() - 0.5) * 0.02;
-        dir.y += (Math.random() - 0.5) * 0.02;
-        dir.z += (Math.random() - 0.5) * 0.02;
-        dir.normalize();
-        combat.shoot(origin, { x: dir.x, y: dir.y, z: dir.z }, 80, combat.livingEnemies());
-        audio.gunshot();
-        police.addHeat(2);
-        dangerPos = { x: player.pos.x, z: player.pos.z };
+      game._fireCd = Math.max(0, (game._fireCd || 0) - dt);
+      const w = progress.currentWeapon();
+      const trigger = w.auto
+        ? input.mouseButtons.has(0)
+        : input.clicked();
+      if (trigger && game._fireCd <= 0) {
+        if (w.id === 'fists') {
+          const f = player.facing();
+          combat.punch({ x: player.pos.x, y: 1.2, z: player.pos.z }, f, combat.livingEnemies());
+          audio.punch();
+          dangerPos = { x: player.pos.x, z: player.pos.z };
+          game._fireCd = w.rate;
+        } else if (progress.ammo[w.id] > 0) {
+          progress.ammo[w.id]--;
+          player.ammo = progress.ammo[w.id];
+          const origin = { x: player.pos.x, y: 1.5, z: player.pos.z };
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          for (let p = 0; p < w.pellets; p++) {
+            const d = dir.clone();
+            d.x += (Math.random() - 0.5) * w.spread * 2;
+            d.y += (Math.random() - 0.5) * w.spread * 2;
+            d.z += (Math.random() - 0.5) * w.spread * 2;
+            d.normalize();
+            combat.shoot(origin, { x: d.x, y: d.y, z: d.z }, w.range, combat.livingEnemies(), w.damage);
+          }
+          audio.gunshot();
+          police.addHeat(2);
+          dangerPos = { x: player.pos.x, z: player.pos.z };
+          game._fireCd = w.rate;
+        } else {
+          hud.toast(w.name + ' — out of ammo! Buy more at Solmar Arms');
+          game._fireCd = 0.4;
+        }
       }
       if (input.wasPressed('KeyF')) {
         const f = player.facing();
@@ -349,6 +452,28 @@ function animate() {
       }
     }
     const policeResult = police.update(dt, player, city, audio);
+    // New systems, every frame: crew cooldown, the SBPD air unit (heli at
+    // 3+ stars), roadblocks (4+ stars), and the shops (E near a shop).
+    progress.update(dt);
+    const pp2 = player.getPos();
+    airUnit.update(dt, pp2, police.wanted, t);
+    const heading = player.mode === 'car' && player.car ? player.car.angle : player.angle;
+    roadblocks.update(dt, police.wanted, pp2, heading);
+    if (player.mode === 'car' && player.car) {
+      if (roadblocks.resolve(player.car.pos, 2.1)) {
+        player.car.speed *= 0.4;
+        player.car.condition = Math.max(0, player.car.condition - 5);
+        if (player.car.condition < 35) player.car.smoking = true;
+        hud.toast('Roadblock! Your car took a hit.');
+      }
+    }
+    shops.update(dt);
+    // The radio moves to the next song every ~24 seconds.
+    game._songTimer = (game._songTimer || 0) + dt;
+    if (game._songTimer > 24) {
+      game._songTimer = 0;
+      progress.nextSong();
+    }
     combat.update(dt, pp, (dmg) => {
       player.damage(dmg);
     }, audio);

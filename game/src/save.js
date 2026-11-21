@@ -25,6 +25,14 @@ export function saveGame(data) {
       missionIdx: data.missionIdx || 0,
       health: Math.floor(data.health || 100),
       pos: { x: data.pos ? data.pos.x : 0, z: data.pos ? data.pos.z : 0 },
+      rep: data.rep || 0,
+      rankIdx: data.rankIdx || 0,
+      owned: data.owned || null,
+      ammo: data.ammo || null,
+      weapon: data.weapon || 'pistol',
+      tune: data.tune || 0,
+      armor: data.armor || 0,
+      station: data.station || 0,
     };
     window.localStorage.setItem(KEY, JSON.stringify(payload));
     return true;

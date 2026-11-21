@@ -5,6 +5,7 @@
 
 import { RNG, clamp, dist2 } from './util.js';
 import { PITCH, HALF, blockCenter } from './city.js';
+import { CAR_NAMES } from './progress.js';
 
 const TRAFFIC_COLORS = [0xc0c0c8, 0x30343c, 0x8a2020, 0x205a8a, 0xc0a030, 0x3a6a3a, 0x707880, 0x904a70];
 const STREET_LINES = [];
@@ -90,16 +91,23 @@ export class Traffic {
         speed: this.rng.range(8, 13),
         target: to,
         wait: 0,
+        name: this.rng.pick(CAR_NAMES.sedan),
+        condition: this.rng.int(60, 100),
       });
     }
   }
 
   _spawnParked() {
     // Twelve parked cars along sidewalks; the first is the sports car the
-    // Hot Wheels mission points at (block 6,3).
+    // Hot Wheels mission points at (block 6,3), the second is the rare
+    // Solstice S the Collector mission wants, parked by the docks.
     const sportSpot = blockCenter(6, 3);
-    const spots = [{ x: sportSpot.x + 8, z: sportSpot.z - 18, sport: true }];
-    for (let i = 1; i < 12; i++) {
+    const dockSpot = blockCenter(9, 3);
+    const spots = [
+      { x: sportSpot.x + 8, z: sportSpot.z - 18, sport: true, name: 'Comet GT' },
+      { x: dockSpot.x - 6, z: dockSpot.z + 21.5, sport: true, name: 'Solstice S', collector: true },
+    ];
+    for (let i = 2; i < 12; i++) {
       const bx = this.rng.int(0, 9);
       const bz = this.rng.int(0, 9);
       const c = blockCenter(bx, bz);
@@ -108,6 +116,7 @@ export class Traffic {
         x: c.x + side * this.rng.range(6, 18),
         z: c.z + this.rng.pick([-1, 1]) * 21.5,
         sport: false,
+        name: this.rng.pick(CAR_NAMES.sedan),
       });
     }
     for (const s of spots) {
@@ -117,7 +126,11 @@ export class Traffic {
       group.position.set(s.x, 0, s.z);
       group.rotation.y = angle;
       this.scene.add(group);
-      this.parked.push({ mesh: group, pos: { x: s.x, z: s.z }, angle, taken: false, sport: s.sport, color });
+      this.parked.push({
+        mesh: group, pos: { x: s.x, z: s.z }, angle, taken: false,
+        sport: s.sport, color, name: s.name, collector: !!s.collector,
+        condition: this.rng.int(70, 100),
+      });
     }
   }
 

@@ -1,4 +1,4 @@
-// Solmar Bay — the story. Six missions, played in order, each with stages,
+// Solmar Bay — the story. Ten missions, played in order, each with stages,
 // dialogue, a beacon marking the target, timers, and a cash reward. Dana
 // Reyes is back in Solmar Bay with $250 and a debt to Marlow, and works it
 // off one job at a time.
@@ -122,6 +122,60 @@ export class Missions {
         reward: 1000,
       },
       {
+        name: 'Neon Street Race',
+        intro: [
+          { name: 'Vex', text: 'Dana Reyes. The Sunset Circuit runs tonight — pier, docks, garage. Loser pays for the paint.' },
+          { name: 'Dana', text: 'You talk too much, Vex. Line up.' },
+          { name: 'Mira', text: 'I swapped your plates already. Win it, and the whole bay hears your name.' },
+        ],
+        stages: [
+          { type: 'deliver', target: L.pier, radius: 10, time: 90, text: 'Checkpoint 1/3: the pier' },
+          { type: 'deliver', target: L.docks, radius: 10, time: 75, text: 'Checkpoint 2/3: the docks' },
+          { type: 'deliver', target: L.garage, radius: 9, time: 75, text: 'Checkpoint 3/3: Marlow\u2019s garage' },
+        ],
+        reward: 1200,
+      },
+      {
+        name: 'The Collector',
+        intro: [
+          { name: 'Marlow', text: 'A collector at the docks owns a Solstice S — silver, one of a kind. He will not miss it till morning.' },
+          { name: 'Dana', text: 'Steal a collector car from the docks. Sure. What could go wrong?' },
+        ],
+        stages: [
+          { type: 'goto', target: L.docks, radius: 12, text: 'Go to the docks' },
+          { type: 'steal', target: L.docks, radius: 8, text: 'Steal the silver Solstice S (press E)' },
+          { type: 'deliver', target: L.garage, radius: 9, time: 120, text: 'Deliver the Solstice S to the garage' },
+        ],
+        reward: 1500,
+      },
+      {
+        name: 'Vulture War',
+        intro: [
+          { name: 'Marlow', text: 'The Vultures came back twice as mean. They hold the mall and the hospital block. Take both back.' },
+          { name: 'Mira', text: 'I will watch the exits. Do not let them circle you, Dana.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.mall, radius: 12, text: 'Go to Solmar Mall' },
+          { type: 'kill', target: L.mall, radius: 22, text: 'Clear the mall crew' },
+          { type: 'kill', target: L.hospital, radius: 22, text: 'Clear the hospital block crew' },
+          { type: 'goto', target: L.garage, radius: 8, text: 'Report back to Marlow' },
+        ],
+        reward: 1800,
+      },
+      {
+        name: 'Harbor Heat',
+        intro: [
+          { name: 'Marlow', text: 'The bank crew is a trap — Vultures inside, cops outside. Fight through, then vanish to the safehouse.' },
+          { name: 'Dana', text: 'A trap I walk into on purpose. This city never changes.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.bank, radius: 10, text: 'Go to Solmar Bank' },
+          { type: 'kill', target: L.bank, radius: 22, text: 'Fight through the bank crew' },
+          { type: 'escape', target: L.safehouse, radius: 9, time: 180, text: 'Escape to the safehouse — lose the heat' },
+        ],
+        reward: 2200,
+      },
+      {
         name: 'The Big Score',
         intro: [
           { name: 'Marlow', text: 'One last job, Dana. The case is at the airfield. The whole city is going to want it. Make it to the pier and we are done.' },
@@ -187,12 +241,27 @@ export class Missions {
       const spots = [[-14, -6], [10, 4], [-4, 12], [14, -12]];
       for (const [dx, dz] of spots) this.game.combat.spawnEnemy(d.x + dx, d.z + dz);
     }
-    if (this.idx === 5 && this.stage === 1) {
+    if (this.idx === 7 && this.stage === 1) {
+      const m = this.game.city.landmarks.mall;
+      const spots = [[-14, -6], [10, 4], [-4, 12], [14, -12], [0, -16]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(m.x + dx, m.z + dz);
+    }
+    if (this.idx === 7 && this.stage === 2) {
+      const h = this.game.city.landmarks.hospital;
+      const spots = [[-12, -8], [12, 6], [-6, 14], [16, -10]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(h.x + dx, h.z + dz);
+    }
+    if (this.idx === 8 && this.stage === 1) {
+      const b = this.game.city.landmarks.bank;
+      const spots = [[-12, -8], [12, 6], [-6, 14], [16, -10], [0, 18]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(b.x + dx, b.z + dz);
+    }
+    if (this.idx === 9 && this.stage === 1) {
       const a = this.game.city.landmarks.airfield;
       const spots = [[-30, -8], [30, 6], [-10, 14], [18, -16], [-34, 10], [34, -4]];
       for (const [dx, dz] of spots) this.game.combat.spawnEnemy(a.x + dx, a.z + dz);
     }
-    if (this.idx === 5 && this.stage === 2) {
+    if (this.idx === 9 && this.stage === 2) {
       const a = this.game.city.landmarks.airfield;
       this.caseMesh.position.set(a.x, 1.0, a.z + 4);
       this.caseMesh.visible = true;
@@ -222,7 +291,15 @@ export class Missions {
   _completeMission() {
     const m = this.current();
     this.game.player.cash += m.reward;
-    this.game.hud.toast('Mission complete: ' + m.name + '  +$' + m.reward.toLocaleString('en-US'));
+    // Respect: each job builds Dana's name in the bay; rank-ups toast.
+    const repGain = 50 + this.idx * 15;
+    if (this.game.progress) {
+      const leveled = this.game.progress.addRep(repGain);
+      if (leveled) {
+        this.game.hud.toast('RANK UP — you are now ' + this.game.progress.rank().name + '  (+' + repGain + ' REP)');
+      }
+    }
+    this.game.hud.toast('Mission complete: ' + m.name + '  +$' + m.reward.toLocaleString('en-US') + '  +' + repGain + ' REP');
     if (this.game.audio) this.game.audio.cash();
     this.beacon.visible = false;
     this.beaconRing.visible = false;
@@ -274,7 +351,8 @@ export class Missions {
     // Dialogue first: E advances, or it advances on its own.
     if (this.dialogueIdx < this.dialogue.length) {
       this.dialogueTimer += dt;
-      if (input.wasPressed('KeyE') || this.dialogueTimer > DIALOGUE_TIME) {
+      // _holdDialogue (screenshot staging) freezes auto-advance; E still works.
+      if (input.wasPressed('KeyE') || (!game._holdDialogue && this.dialogueTimer > DIALOGUE_TIME)) {
         this.dialogueIdx++;
         this.dialogueTimer = 0;
         if (this.dialogueIdx < this.dialogue.length) {
@@ -313,8 +391,19 @@ export class Missions {
         break;
       }
       case 'steal': {
-        const sport = game.traffic.parked.find((p) => p.sport && !p.taken);
-        if (sport && dist2(pp.x, pp.z, sport.pos.x, sport.pos.z) < 5 && input.wasPressed('KeyE')) {
+        // Steal the nearest sport car within reach (the mission target is
+        // the one parked at the stage location, e.g. the Solstice S).
+        let sport = null;
+        let bestD = 6;
+        for (const p of game.traffic.parked) {
+          if (!p.sport || p.taken) continue;
+          const dd = dist2(pp.x, pp.z, p.pos.x, p.pos.z);
+          if (dd < bestD) {
+            bestD = dd;
+            sport = p;
+          }
+        }
+        if (sport && input.wasPressed('KeyE')) {
           player.enterCar(sport);
           game.police.addHeat(25);
           game.hud.toast('Stolen! The cops are coming.');

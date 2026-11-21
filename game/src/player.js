@@ -79,6 +79,7 @@ export class Player {
   }
 
   damage(n) {
+    if (this.progress) n = this.progress.absorbDamage(n);
     this.health = clamp(this.health - n, 0, 100);
     return this.health <= 0;
   }
@@ -100,6 +101,9 @@ export class Player {
       steering: 0,
       sport: parked.sport,
       wheels: [],
+      name: parked.name || 'Meridian LX',
+      condition: parked.condition ?? 100,
+      smoking: (parked.condition ?? 100) < 35,
     };
     // Collect the wheel meshes for spin animation.
     for (const child of group.children) {
@@ -117,7 +121,7 @@ export class Player {
     group.position.set(x, 0, z);
     group.rotation.y = angle;
     this.scene.add(group);
-    return { mesh: group, pos: { x, z }, angle, taken: false, sport: false, starter: true, color: 0x2a6ab0 };
+    return { mesh: group, pos: { x, z }, angle, taken: false, sport: false, starter: true, color: 0x2a6ab0, name: 'Meridian LX', condition: 100 };
   }
 
   exitCar() {
@@ -147,7 +151,7 @@ export class Player {
       // Engine braking + rolling resistance.
       car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), 8 * dt);
     }
-    const maxSpeed = car.sport ? CAR_MAX_SPEED * 1.25 : CAR_MAX_SPEED;
+    const maxSpeed = (car.sport ? CAR_MAX_SPEED * 1.25 : CAR_MAX_SPEED) * (1 + 0.08 * (this.progress ? this.progress.tune : 0));
     car.speed = clamp(car.speed, -10, maxSpeed);
     const steerTarget = (left ? 1 : 0) - (right ? 1 : 0);
     car.steering += (steerTarget - car.steering) * Math.min(1, dt * 6);
@@ -159,6 +163,11 @@ export class Player {
     const nz = car.pos.z + Math.cos(car.angle) * car.speed * dt;
     const p = { x: nx, z: nz };
     resolveCircle(p, 2.1, colliders);
+    // Scraping a wall at speed damages the car.
+    if ((p.x !== nx || p.z !== nz) && Math.abs(car.speed) > 8) {
+      car.condition = Math.max(0, car.condition - 1.5);
+      if (car.condition < 35) car.smoking = true;
+    }
     // Bounce off traffic cars.
     for (const other of trafficCars) {
       const dx = p.x - other.pos.x;
@@ -167,6 +176,10 @@ export class Player {
       if (d < 4.2 && d > 0.01) {
         p.x = other.pos.x + (dx / d) * 4.2;
         p.z = other.pos.z + (dz / d) * 4.2;
+        if (Math.abs(car.speed) > 6) {
+          car.condition = Math.max(0, car.condition - 2);
+          if (car.condition < 35) car.smoking = true;
+        }
         car.speed *= 0.5;
       }
     }
