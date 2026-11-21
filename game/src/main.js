@@ -254,10 +254,7 @@ function nearestParkedCar() {
   const pp = playerPos();
   let car = null;
   if (traffic && typeof traffic.nearestParked === 'function') {
-    try { car = traffic.nearestParked(pp); } catch (e) { car = null; }
-    if (!car) {
-      try { car = traffic.nearestParked(pp.x, pp.z); } catch (e) { car = null; }
-    }
+    try { car = traffic.nearestParked(pp, 30); } catch (e) { car = null; }
   }
   if (typeof car === 'number') car = (traffic.cars && traffic.cars[car]) || null;
   if (car && car.car) car = car.car;
@@ -895,7 +892,12 @@ function animate() {
         if (isDriving()) exitCar();
         else {
           const car = nearestParkedCar();
-          if (car) enterCar(car);
+          if (car) {
+            enterCar(car);
+            car.taken = true;
+            try { if (police && typeof police.addHeat === 'function') police.addHeat(15); } catch (e) {}
+            toast('Mobil dicuri! Polisi mengejar!');
+          }
         }
       }
     }
