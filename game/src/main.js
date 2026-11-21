@@ -895,7 +895,7 @@ function animate() {
           if (car) {
             enterCar(car);
             car.taken = true;
-            try { if (police && typeof police.addHeat === 'function') police.addHeat(15); } catch (e) {}
+            try { if (police && typeof police.addHeat === 'function') police.addHeat(25); } catch (e) {}
             toast('Mobil dicuri! Polisi mengejar!');
           }
         }

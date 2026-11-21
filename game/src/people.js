@@ -133,7 +133,7 @@ export class Pedestrians {
         if (p.pos.x < -HALF + 4 || p.pos.x > HALF - 4) p.dir = p.axis === 'x' ? -p.dir : p.dir;
         if (p.pos.z < -HALF + 4 || p.pos.z > HALF - 4) p.dir = p.axis === 'z' ? -p.dir : p.dir;
         p.pos.x = clamp(p.pos.x, -HALF + 2, HALF - 2);
-        p.pos.z = clamp(p.pos.z, -HALF + 2, HALF - 2);
+        p.pos.z = clamp(p.pos.z, -HALF + 2, 312);
       }
       // Animate walk + face movement direction.
       p.phase += dt * speed * 3.2;

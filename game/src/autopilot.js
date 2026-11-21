@@ -248,7 +248,7 @@ function stageShot(game, n) {
     clearDialogue(game);
     game.camYaw = -Math.PI / 2; game.camDist = 9;
     try {
-      const pedSpots = [[-122, 290], [-116, 302], [-110, 290], [-104, 302], [-98, 290], [-92, 302], [-86, 290], [-80, 302]];
+      const pedSpots = [[-124, 290], [-119, 302], [-114, 290], [-104, 302], [-98, 290], [-92, 302], [-86, 290], [-80, 302]];
       const peds = (game.peds && game.peds.list) || [];
       const pedCount = Math.min(8, peds.length, pedSpots.length);
       for (let i = 0; i < pedCount; i++) {
@@ -294,7 +294,7 @@ function stageShot(game, n) {
       const line = missions && missions.dialogue && missions.dialogue[1];
       if (line && game.hud && game.hud.showDialogue) game.hud.showDialogue(line.name, line.text);
     } catch (e) {}
-    spawnEnemiesNear(game, 0, -20, [[-3, -6], [4, -7], [2, -10], [-7, -8]]);
+    spawnEnemiesNear(game, 0, -20, [[-6, -5], [6, -6], [-5, -9], [5, -10]]);
     game.camYaw = 0.15; game.camDist = 4.5;
     try { stageShotFx(game); } catch (e) { log('stageShotFx failed: ' + (e && e.message ? e.message : e)); }
   } else if (n === 4) {
@@ -325,7 +325,7 @@ function stageShot(game, n) {
       const b = blocks[0];
       if (b) {
         b.x = 0; b.z = -216; b.angle = Math.PI / 2; b.life = 30;
-        const spots = [[-3, -216], [3, -216]];
+        const spots = [[-5, -215], [5, -217]];
         const cars = b.cars || [];
         const cnt = Math.min(2, cars.length, spots.length);
         for (let i = 0; i < cnt; i++) {
