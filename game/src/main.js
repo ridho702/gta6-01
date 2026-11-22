@@ -79,6 +79,12 @@ scene.add(city.group);
 const input = new Input();
 input.attach();
 
+// Sprint 12: right mouse aims the sniper scope — don't let the browser
+// menu steal the release while the sniper is equipped.
+window.addEventListener('contextmenu', (e) => {
+  if (currentWeaponId() === 'sniper') e.preventDefault();
+});
+
 const audio = new AudioEngine();
 const hud = new HUD();
 const traffic = new Traffic(scene, THREE, 777);
@@ -325,7 +331,7 @@ function addCash(n) {
 // edge-detecting the held-key set so the game still works if only one of
 // those surfaces exists.
 const KEY_CODES = ['KeyP', 'KeyM', 'KeyC', 'KeyH', 'KeyR', 'KeyZ', 'KeyE', 'KeyF',
-  'Digit1', 'Digit2', 'Digit3', 'Digit4'];
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
 let _prevKeys = new Set();
 let _curKeys = new Set();
 let _prevMouse = false;
@@ -659,6 +665,56 @@ function doShoot() {
   } catch (e) {
     enemies = combat.enemies || [];
   }
+  // Sprint 12: RPG — area blast at the impact point, no single-target ray.
+  if (w.id === 'rpg') {
+    let impactDist = w.range || 120;
+    for (const e of enemies) {
+      if (!e || e.alive === false) continue;
+      const ep = getPos(e);
+      if (!ep) continue;
+      const ox = (ep.x || 0) - _tmpOrigin.x;
+      const oy = (ep.y || 0) - _tmpOrigin.y;
+      const oz = (ep.z || 0) - _tmpOrigin.z;
+      const along = ox * _tmpDir.x + oy * _tmpDir.y + oz * _tmpDir.z;
+      if (along <= 0 || along >= impactDist) continue;
+      const cx = _tmpOrigin.x + _tmpDir.x * along;
+      const cy = _tmpOrigin.y + _tmpDir.y * along;
+      const cz = _tmpOrigin.z + _tmpDir.z * along;
+      const ddx = (ep.x || 0) - cx;
+      const ddy = (ep.y || 0) - cy;
+      const ddz = (ep.z || 0) - cz;
+      if (Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) < 3 + along * 0.05) impactDist = along;
+    }
+    const impact = {
+      x: _tmpOrigin.x + _tmpDir.x * impactDist,
+      y: _tmpOrigin.y + _tmpDir.y * impactDist,
+      z: _tmpOrigin.z + _tmpDir.z * impactDist,
+    };
+    particles.explosion(impact);
+    if (audio && typeof audio.explosion === 'function') audio.explosion();
+    for (const e of enemies) {
+      if (!e || e.alive === false) continue;
+      const ep = getPos(e);
+      if (!ep) continue;
+      const dx = (ep.x || 0) - impact.x;
+      const dy = (ep.y || 0) - impact.y;
+      const dz = (ep.z || 0) - impact.z;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 12) continue;
+      if (typeof e.health === 'number') {
+        e.health -= w.damage || 90;
+        if (e.health <= 0) {
+          e.alive = false;
+          if (e.mesh) e.mesh.visible = false;
+        }
+      }
+      if (typeof e.onHit === 'function') e.onHit(e);
+    }
+    particles.flash({ x: pp.x + _tmpDir.x * 0.8, y: 1.5, z: pp.z + _tmpDir.z * 0.8 });
+    if (police && typeof police.addHeat === 'function') police.addHeat(6);
+    dangerPos = new THREE.Vector3(pp.x, 0, pp.z);
+    game._fireCd = w.rate || 2.0;
+    return;
+  }
   const pellets = w.pellets || 1;
   const spread = w.spread || 0;
   for (let i = 0; i < pellets; i++) {
@@ -764,6 +820,19 @@ function updateCamera(dt) {
     target.z + Math.cos(game.camYaw) * cp * dist
   );
   camera.lookAt(target.x, (target.y || 0) + 1.6, target.z);
+
+  // Sprint 12: sniper scope — hold right mouse to zoom in; crosshair on
+  // while the sniper is equipped. FOV restores the moment it is released.
+  const _sniping = currentWeaponId() === 'sniper';
+  const _scoped = _sniping && input.mouseButtons
+    && typeof input.mouseButtons.has === 'function' && input.mouseButtons.has(2);
+  const _wantFov = _scoped ? 22 : 62;
+  if (camera.fov !== _wantFov) {
+    camera.fov = _wantFov;
+    camera.updateProjectionMatrix();
+  }
+  const _xh = document.getElementById('hud-crosshair');
+  if (_xh) _xh.style.display = _sniping ? 'block' : 'none';
 }
 
 // -------------------------------------------------------------------- loop
@@ -818,9 +887,9 @@ function animate() {
       }
     }
 
-    // Weapon slots 1-4.
-    const slotNames = ['fists', 'pistol', 'smg', 'shotgun'];
-    for (let i = 0; i < 4; i++) {
+    // Weapon slots 1-6.
+    const slotNames = ['fists', 'pistol', 'smg', 'shotgun', 'sniper', 'rpg'];
+    for (let i = 0; i < 6; i++) {
       if (keyPressed('Digit' + (i + 1))) {
         const name = slotNames[i];
         if (progress && typeof progress.selectWeapon === 'function') progress.selectWeapon(name);

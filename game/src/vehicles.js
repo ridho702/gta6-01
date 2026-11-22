@@ -59,6 +59,63 @@ export function createCarMesh(THREE, color, sport) {
   return { group, wheels, bodyMat };
 }
 
+// Sprint 12 — Coast Runner / Bay Hopper bike mesh. Same primitives as the
+// car mesh (narrow box body + 2 cylinder wheels + a box rider), so traffic,
+// parking and the player-driving code can treat a bike like any vehicle.
+export function createBikeMesh(THREE, color) {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color });
+  const darkMat = new THREE.MeshLambertMaterial({ color: 0x14151a });
+  const jacketMat = new THREE.MeshLambertMaterial({ color: 0x2b5cb8 });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
+
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 2.1), bodyMat);
+  frame.position.set(0, 0.55, 0);
+  group.add(frame);
+
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.7), bodyMat);
+  tank.position.set(0, 0.8, 0.3);
+  group.add(tank);
+
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.15, 0.7), darkMat);
+  seat.position.set(0, 0.78, -0.55);
+  group.add(seat);
+
+  const bars = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), darkMat);
+  bars.position.set(0, 0.95, 0.95);
+  group.add(bars);
+
+  // Rider: leaning torso + head, so the bike reads at street distance.
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), jacketMat);
+  torso.position.set(0, 1.15, -0.3);
+  torso.rotation.x = 0.35;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skinMat);
+  head.position.set(0, 1.65, -0.15);
+  group.add(head);
+
+  const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.18, 10);
+  const wheels = [];
+  for (const wz of [-0.95, 0.95]) {
+    const wheel = new THREE.Mesh(wheelGeo, darkMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(0, 0.36, wz);
+    group.add(wheel);
+    wheels.push(wheel);
+  }
+
+  const headMat = new THREE.MeshLambertMaterial({ color: 0xfff2b0 });
+  const tailMat = new THREE.MeshLambertMaterial({ color: 0xd02020 });
+  const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.08), headMat);
+  headlight.position.set(0, 0.6, 1.08);
+  group.add(headlight);
+  const taillight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.08), tailMat);
+  taillight.position.set(0, 0.6, -1.08);
+  group.add(taillight);
+
+  return { group, wheels, bodyMat };
+}
+
 export class Traffic {
   constructor(scene, THREE, seed) {
     this.scene = scene;
@@ -77,7 +134,10 @@ export class Traffic {
   _spawnTraffic() {
     for (let i = 0; i < 14; i++) {
       const color = this.rng.pick(TRAFFIC_COLORS);
-      const { group } = createCarMesh(this.THREE, color, false);
+      const isBike = this.rng.chance(0.15);
+      const { group } = isBike
+        ? createBikeMesh(this.THREE, color)
+        : createCarMesh(this.THREE, color, false);
       this.scene.add(group);
       const from = this._randomIntersection();
       const to = this._randomIntersection();
@@ -85,11 +145,12 @@ export class Traffic {
         mesh: group,
         pos: { x: from.x, z: from.z },
         angle: 0,
-        speed: this.rng.range(8, 13),
+        speed: isBike ? this.rng.range(11, 16) : this.rng.range(8, 13),
         target: to,
         wait: 0,
-        name: this.rng.pick(CAR_NAMES.sedan),
+        name: isBike ? this.rng.pick(CAR_NAMES.bike) : this.rng.pick(CAR_NAMES.sedan),
         condition: this.rng.int(60, 100),
+        bike: isBike,
       });
     }
   }
@@ -100,6 +161,10 @@ export class Traffic {
     spots.push({ x: sportSpot.x + 8, z: sportSpot.z - 18, sport: true, name: 'Comet GT' });
     const dockSpot = blockCenter(9, 3);
     spots.push({ x: dockSpot.x - 6, z: dockSpot.z + 21.5, sport: true, name: 'Solstice S', collector: true });
+    // Sprint 12 — parked bikes: one on the pier deck, one by Marlow's garage.
+    spots.push({ x: 4, z: 322, bike: true, name: 'Coast Runner' });
+    const garageSpot = blockCenter(8, 2);
+    spots.push({ x: garageSpot.x + 14, z: garageSpot.z + 18, bike: true, name: 'Bay Hopper' });
     for (let i = 0; i < 10; i++) {
       const bx = this.rng.int(0, 9);
       const bz = this.rng.int(0, 9);
@@ -113,9 +178,11 @@ export class Traffic {
       });
     }
     for (const spot of spots) {
-      const { x, z, sport, name, collector } = spot;
+      const { x, z, sport, name, collector, bike } = spot;
       const color = sport ? 0xd02030 : this.rng.pick(TRAFFIC_COLORS);
-      const { group } = createCarMesh(this.THREE, color, sport);
+      const { group } = bike
+        ? createBikeMesh(this.THREE, color)
+        : createCarMesh(this.THREE, color, sport);
       const angle = this.rng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
       group.position.set(x, 0, z);
       group.rotation.y = angle;
@@ -126,6 +193,7 @@ export class Traffic {
         angle,
         taken: false,
         sport,
+        bike: !!bike,
         color,
         name,
         collector: !!collector,

@@ -12,6 +12,8 @@ const RANKS = ['HUSTLER', 'RUNNER', 'FIXER', 'SHOT CALLER', 'BAY KING'];
 function ammoPrice(w) {
   if (w.id === 'smg') return 120;
   if (w.id === 'shotgun') return 90;
+  if (w.id === 'sniper') return 100;
+  if (w.id === 'rpg') return 200;
   return 60;
 }
 

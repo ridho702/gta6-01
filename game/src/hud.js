@@ -61,7 +61,7 @@ export class HUD {
         const idx = game.missions.idx ?? 0;
         const stage = game.missions.stage ?? game.missions.currentStageIndex ?? 0;
         const timeLeft = game.missions.timeLeft ?? 0;
-        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/10 — ' + m.name.toUpperCase();
+        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/12 — ' + m.name.toUpperCase();
         if (stageEl && st && m) stageEl.textContent = 'STAGE ' + (stage + 1) + '/' + m.stages.length + ' — ' + st.text;
         if (fill && m) fill.style.width = Math.round(((stage + 1) / m.stages.length) * 100) + '%';
         if (timerEl) timerEl.textContent = timeLeft > 0 ? '⏱ ' + Math.ceil(timeLeft) + 's LEFT' : '';
@@ -71,7 +71,7 @@ export class HUD {
         if (fill) fill.style.width = '100%';
         if (timerEl) timerEl.textContent = '';
       } else {
-        if (mTitle) mTitle.textContent = 'MISSION 1/10 — FRESH START';
+        if (mTitle) mTitle.textContent = 'MISSION 1/12 — FRESH START';
         if (stageEl) stageEl.textContent = 'Press Start to begin the story';
         if (timerEl) timerEl.textContent = '';
       }

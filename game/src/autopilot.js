@@ -286,8 +286,8 @@ function stageShot(game, n) {
     setPlayerPos(game, 0, -20);
     setPlayerAngle(game, Math.PI);
     setHeat(game, 55);
-    try { if (progress) { progress.addRep(420); progress.owned.smg = true; progress.ammo.smg = 120; } } catch (e) {}
-    try { if (progress) progress.selectWeapon('smg'); } catch (e) {}
+    try { if (progress) { progress.addRep(950); progress.owned.smg = true; progress.ammo.smg = 120; progress.owned.sniper = true; progress.ammo.sniper = 12; } } catch (e) {}
+    try { if (progress) progress.selectWeapon('sniper'); } catch (e) {}
     startMissionByName(game, 'Vulture War');
     if (missions) { missions.dialogueIdx = 1; missions._holdDialogue = true; }
     try {
@@ -429,9 +429,9 @@ async function runSelftest(game) {
   const rendererOk = game.renderer != null;
   const sceneOk = sceneCount > 50;
   const trafficOk = trafficCount === 14;
-  const parkedOk = parkedCount === 12;
+  const parkedOk = parkedCount === 14; // 12 cars + 2 parked bikes (sprint 12)
   const pedsOk = pedCount === 26;
-  const missionsOk = missionDefs === 10;
+  const missionsOk = missionDefs === 12; // 10 + Night Shift + The Last Ferry (sprint 12)
   const playerAlive = game.player && game.player.health > 0;
   const noErrors = (window.__errors || []).length === 0;
   const details = {};

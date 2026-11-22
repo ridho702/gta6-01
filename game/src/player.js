@@ -154,10 +154,13 @@ export class Player {
     const a = this._down(input, 'KeyA');
     const d = this._down(input, 'KeyD');
     let carSpeed = typeof this.carSpeed === 'number' ? this.carSpeed : 0;
-    const topSpeed = 38;
+    const isBike = !!car.bike;
+    // Sprint 12 — bikes: quicker off the line, higher top speed than cars.
+    // Car top speed stays at its original 38; bikes go to 45.
+    const topSpeed = isBike ? 45 : 38;
     const topReverse = 12;
     if (w) {
-      carSpeed += 14 * dt;
+      carSpeed += (isBike ? 20 : 14) * dt;
       if (carSpeed > topSpeed) carSpeed = topSpeed;
     } else if (s) {
       if (carSpeed > 0.5) {
@@ -180,7 +183,7 @@ export class Player {
     const steerInput = (d ? 1 : 0) - (a ? 1 : 0);
     if (steerInput !== 0 && carSpeed !== 0) {
       const grip = Math.min(Math.abs(carSpeed) / 8, 1);
-      car.angle += steerInput * 1.9 * dt * grip * (carSpeed > 0 ? 1 : -1);
+      car.angle += steerInput * (isBike ? 2.4 : 1.9) * dt * grip * (carSpeed > 0 ? 1 : -1);
     }
     const nextX = car.pos.x + Math.sin(car.angle) * carSpeed * dt;
     const nextZ = car.pos.z + Math.cos(car.angle) * carSpeed * dt;
@@ -208,6 +211,8 @@ export class Player {
     if (car.mesh) {
       car.mesh.position.set(car.pos.x, 0, car.pos.z);
       car.mesh.rotation.y = car.angle;
+      // Sprint 12 — a ridden bike leans into corners while moving.
+      if (isBike) car.mesh.rotation.z = Math.abs(carSpeed) > 0.5 ? -steerInput * 0.3 : 0;
     }
     this.carSpeed = carSpeed;
     this.speed = 0;

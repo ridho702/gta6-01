@@ -1,4 +1,4 @@
-// Solmar Bay — the story. Ten missions, played in order, each with stages,
+// Solmar Bay — the story. Twelve missions, played in order, each with stages,
 // dialogue, a beacon marking the target, timers, and a cash reward. Dana
 // Reyes is back in Solmar Bay with $250 and a debt to Marlow, and works it
 // off one job at a time.
@@ -188,6 +188,36 @@ export class Missions {
         ],
         reward: 5000,
       },
+      {
+        name: 'Night Shift',
+        intro: [
+          { name: 'Mira', text: 'Dana, the Vultures are gathering at the airfield again. Trucks, guns — a whole convoy. They are planning something big.' },
+          { name: 'Dana', text: 'Then I go take a look. Quietly.' },
+          { name: 'Mira', text: 'Quietly, then loud if you have to. Bring me proof — papers, a plate, anything. Marlow needs to know what they are moving.' },
+          { name: 'Marlow', text: 'And Dana — if that convoy rolls out tonight, it rolls over us. Stop it.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.airfield, radius: 14, text: 'Reach the airfield — scout the Vultures' },
+          { type: 'kill', target: L.airfield, radius: 24, text: 'Stop the Vulture convoy' },
+          { type: 'deliver', target: L.safehouse, radius: 9, text: 'Bring the evidence to the safehouse' },
+        ],
+        reward: 2600,
+      },
+      {
+        name: 'The Last Ferry',
+        intro: [
+          { name: 'Marlow', text: 'This is it, Dana. The last of the Vultures are dug in at the pier. We end this tonight, together.' },
+          { name: 'Mira', text: 'I will cover the pier road. You take the head of the pier — and do not stop till the last one drops.' },
+          { name: 'Dana', text: 'Five years I ran from this city. Tonight I take it back. When the pier is clear, we catch the last ferry out.' },
+          { name: 'Marlow', text: 'Your debt is paid in full after this, Dana. Whatever happens — it was an honor.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.pier, radius: 12, text: 'Get to the pier' },
+          { type: 'kill', target: L.pier, radius: 24, text: 'Hold the pier — clear the last Vultures' },
+          { type: 'escape', target: L.docks, radius: 9, time: 180, text: 'Board the ferry at the docks — leave Solmar Bay' },
+        ],
+        reward: 6000,
+      },
     ];
   }
 
@@ -265,6 +295,25 @@ export class Missions {
       const a = this.game.city.landmarks.airfield;
       this.caseMesh.position.set(a.x, 1.0, a.z + 4);
       this.caseMesh.visible = true;
+    }
+    if (this.idx === 10 && this.stage === 1) {
+      const a = this.game.city.landmarks.airfield;
+      const spots = [[-30, -8], [30, 6], [-10, 14], [18, -16], [-34, 10], [34, -4]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(a.x + dx, a.z + dz);
+    }
+    if (this.idx === 11 && this.stage === 1) {
+      const p = this.game.city.landmarks.pier;
+      const spots = [[-4, -12], [5, -6], [-5, 6], [4, 12], [0, -18], [6, 18]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(p.x + dx, p.z + dz);
+    }
+    if (this.idx === 11 && this.stage === 2) {
+      // Epilogue: the arc closes as Dana runs for the last ferry.
+      this._say([
+        { name: 'Mira', text: 'Pier is clear! The ferry is waiting at the docks — go, Dana, GO!' },
+        { name: 'Dana', text: 'It is over. The Vultures are done — and so is my debt.' },
+        { name: 'Marlow', text: 'Solmar Bay is yours now, Dana Reyes. Do not look back.' },
+        { name: 'Dana', text: 'I will not. Next stop — anywhere but here. Thank you, both of you.' },
+      ]);
     }
     const t = st.target;
     if (t) {

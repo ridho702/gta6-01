@@ -28,6 +28,14 @@ export const WEAPONS = [
     id: 'shotgun', slot: 4, name: 'BREAKER 12', price: 1500, rank: 2,
     damage: 14, rate: 0.85, spread: 0.09, pellets: 6, auto: false, range: 45,
   },
+  {
+    id: 'sniper', slot: 5, name: 'LONGSHOT 50', price: 2500, rank: 3,
+    damage: 120, rate: 1.4, spread: 0.001, pellets: 1, auto: false, range: 220,
+  },
+  {
+    id: 'rpg', slot: 6, name: 'HARBOUR RAIN RPG', price: 4000, rank: 3,
+    damage: 90, rate: 2.0, spread: 0, pellets: 1, auto: false, range: 120,
+  },
 ];
 
 export const STATIONS = [
@@ -53,6 +61,7 @@ export const CAR_NAMES = {
   sport: ['Comet GT', 'Solstice S', 'Vagabond GT', 'Pier Runner X'],
   sedan: ['Meridian LX', 'Coral Cruiser', 'Harborline', 'Dune Runner', 'Bayliner 4', 'Solstice Sedan'],
   truck: ['Harbor Hauler', 'Dock Mule', 'Sand Runner'],
+  bike: ['Coast Runner', 'Bay Hopper'],
 };
 
 // District names by world position (city spans -260..260, beach z 262..300).
@@ -72,8 +81,8 @@ export class Progress {
   constructor() {
     this.rep = 0;
     this.rankIdx = 0;
-    this.owned = { fists: true, pistol: true, smg: false, shotgun: false };
-    this.ammo = { fists: Infinity, pistol: 48, smg: 0, shotgun: 0 };
+    this.owned = { fists: true, pistol: true, smg: false, shotgun: false, sniper: false, rpg: false };
+    this.ammo = { fists: Infinity, pistol: 48, smg: 0, shotgun: 0, sniper: 0, rpg: 0 };
     this.weapon = 'pistol';
     this.station = 0;
     this.songIdx = 0;
@@ -117,14 +126,14 @@ export class Progress {
     if (!this.canBuy(w)) return { ok: false, reason: 'needs rank ' + RANKS[w.rank].name };
     if (cash < w.price) return { ok: false, reason: 'not enough cash' };
     this.owned[w.id] = true;
-    this.ammo[w.id] = w.id === 'smg' ? 120 : 24;
+    this.ammo[w.id] = w.id === 'smg' ? 120 : w.id === 'sniper' ? 12 : w.id === 'rpg' ? 6 : 24;
     return { ok: true, cost: w.price };
   }
 
   buyAmmo(w, cash) {
-    const price = w.id === 'smg' ? 120 : w.id === 'shotgun' ? 90 : 60;
+    const price = w.id === 'smg' ? 120 : w.id === 'shotgun' ? 90 : w.id === 'sniper' ? 100 : w.id === 'rpg' ? 200 : 60;
     if (cash < price) return { ok: false, reason: 'not enough cash' };
-    this.ammo[w.id] += w.id === 'smg' ? 90 : w.id === 'shotgun' ? 16 : 36;
+    this.ammo[w.id] += w.id === 'smg' ? 90 : w.id === 'shotgun' ? 16 : w.id === 'sniper' ? 12 : w.id === 'rpg' ? 4 : 36;
     return { ok: true, cost: price };
   }
 
