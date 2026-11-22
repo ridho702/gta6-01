@@ -1,4 +1,4 @@
-// Solmar Bay — the story. Twelve missions, played in order, each with stages,
+// Solmar Bay — the story. Fourteen missions, played in order, each with stages,
 // dialogue, a beacon marking the target, timers, and a cash reward. Dana
 // Reyes is back in Solmar Bay with $250 and a debt to Marlow, and works it
 // off one job at a time.
@@ -218,6 +218,36 @@ export class Missions {
         ],
         reward: 6000,
       },
+      {
+        name: 'One Last Job',
+        intro: [
+          { name: 'Marlow', text: 'Dana — hold the ferry. The Vultures\u2019 boss is still free, and he is loading his last stash at the harbour. One more score, then the bay is really yours.' },
+          { name: 'Dana', text: 'Marlow, I was already on the boat. You want me to step off for one more fight?' },
+          { name: 'Marlow', text: 'I want you to finish it. The stash is at the docks — take it, bring it to my garage, and no one ever comes for us again.' },
+          { name: 'Mira', text: 'I will watch the harbour road. Go — before his trucks roll out.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.docks, radius: 12, text: 'Reach the harbour — find the Vulture stash' },
+          { type: 'kill', target: L.docks, radius: 24, text: 'Clear the harbour crew' },
+          { type: 'deliver', target: L.garage, radius: 9, time: 150, text: 'Drive the stash to Marlow\u2019s garage' },
+        ],
+        reward: 8000,
+      },
+      {
+        name: 'Harbour Lights',
+        intro: [
+          { name: 'Mira', text: 'Sun is setting over the harbour, Dana. The last Vultures are dug in at the pier — and their boss is with them this time.' },
+          { name: 'Dana', text: 'Then tonight it ends. No more running, no more debt. If I walk off that pier, I walk off as the one who runs this bay.' },
+          { name: 'Marlow', text: 'You already run it, Dana. You just have to make them say it. I will be at the garage, listening for the quiet.' },
+          { name: 'Vex', text: 'Heard you were leaving, Reyes. Stay and fight, and the whole bay will remember your name — win or lose.' },
+        ],
+        stages: [
+          { type: 'goto', target: L.pier, radius: 12, text: 'Get to the pier at sunset' },
+          { type: 'kill', target: L.pier, radius: 24, text: 'Hold the pier — the final Vultures' },
+          { type: 'goto', target: { x: 0, z: 342 }, radius: 6, text: 'Stand at the end of the pier — claim Solmar Bay' },
+        ],
+        reward: 10000,
+      },
     ];
   }
 
@@ -313,6 +343,25 @@ export class Missions {
         { name: 'Dana', text: 'It is over. The Vultures are done — and so is my debt.' },
         { name: 'Marlow', text: 'Solmar Bay is yours now, Dana Reyes. Do not look back.' },
         { name: 'Dana', text: 'I will not. Next stop — anywhere but here. Thank you, both of you.' },
+      ]);
+    }
+    if (this.idx === 12 && this.stage === 1) {
+      const d = this.game.city.landmarks.docks;
+      const spots = [[-16, -4], [8, 8], [-6, 14], [12, -10], [2, -14]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(d.x + dx, d.z + dz);
+    }
+    if (this.idx === 13 && this.stage === 1) {
+      const p = this.game.city.landmarks.pier;
+      const spots = [[-5, -14], [6, -8], [-6, 4], [5, 10], [-2, 16], [6, -18], [-6, -2]];
+      for (const [dx, dz] of spots) this.game.combat.spawnEnemy(p.x + dx, p.z + dz);
+    }
+    if (this.idx === 13 && this.stage === 2) {
+      // Epilogue: Dana stays. The ferry leaves without her — Solmar Bay has a new ruler.
+      this._say([
+        { name: 'Dana', text: 'It is done. The harbour lights are mine now — every one of them.' },
+        { name: 'Mira', text: 'The whole bay just went quiet, Dana. They heard you.' },
+        { name: 'Marlow', text: 'Solmar Bay is yours, Dana Reyes. Not borrowed. Not owed. Yours.' },
+        { name: 'Dana', text: 'Then I am staying. No ferry, no running. This city is home now — and I rule it.' },
       ]);
     }
     const t = st.target;

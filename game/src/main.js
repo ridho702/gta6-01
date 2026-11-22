@@ -20,6 +20,8 @@ import { applyAutopilot } from './autopilot.js';
 import { Progress, STATIONS, WEAPONS } from './progress.js';
 import { AirUnit, Roadblocks } from './airunit.js';
 import { Shops } from './shops.js';
+import { FlyHeli } from './flyheli.js';
+import { Grenades } from './grenades.js';
 import { Particles } from './particles.js';
 import { dressCity } from './citydress.js';
 
@@ -140,6 +142,12 @@ game.missions = missions;
 player.progress = progress;
 const shops = new Shops(game);
 game.shops = shops;
+// Sprint 14: flyable heli + grenades. Assigned onto `game` (not in the
+// literal above, which is built before these are constructed).
+const flyHeli = new FlyHeli(scene, THREE, { player: player, police: police, game: game });
+game.flyHeli = flyHeli;
+const grenades = new Grenades(game);
+game.grenades = grenades;
 audio.setStation(STATIONS[0]);
 
 // Soft shadows for everything built so far. Ground / water / light pools
@@ -330,8 +338,8 @@ function addCash(n) {
 // The Input class exposes pressed()/down() in the usual build; fall back to
 // edge-detecting the held-key set so the game still works if only one of
 // those surfaces exists.
-const KEY_CODES = ['KeyP', 'KeyM', 'KeyC', 'KeyH', 'KeyR', 'KeyZ', 'KeyE', 'KeyF',
-  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
+const KEY_CODES = ['KeyP', 'KeyM', 'KeyC', 'KeyH', 'KeyR', 'KeyZ', 'KeyE', 'KeyF', 'KeyG',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'];
 let _prevKeys = new Set();
 let _curKeys = new Set();
 let _prevMouse = false;
@@ -496,6 +504,8 @@ function saveNow() {
       weapon: progress.weapon,
       tune: progress.tune,
       armor: progress.armor,
+      nitro: progress.nitro,
+      tires: progress.tires,
       station: stationVal,
     });
   } catch (e) {
@@ -524,6 +534,10 @@ function respawn(atHospital) {
   setPlayerAngle(Math.PI);
   setPlayerHealth(100);
   if (isDriving()) exitCar();
+  // Sprint 14: drop the player out of the heli too (died mid-air).
+  if (flyHeli && typeof flyHeli.forceExit === 'function') {
+    try { flyHeli.forceExit(); } catch (e) {}
+  }
   try {
     if (typeof police.clear === 'function') police.clear();
     else if (typeof police.reset === 'function') police.reset();
@@ -572,6 +586,9 @@ function startGame(opts) {
       }
       if (save.tune !== undefined) progress.tune = save.tune;
       if (save.armor !== undefined) progress.armor = save.armor;
+      // Sprint 14: garage upgrades persist across reloads.
+      if (save.nitro !== undefined) progress.nitro = save.nitro;
+      if (save.tires !== undefined) progress.tires = save.tires;
       if (save.station !== undefined) {
         if ('station' in progress) progress.station = save.station;
         else if ('stationIdx' in progress) progress.stationIdx = save.station;
@@ -887,9 +904,9 @@ function animate() {
       }
     }
 
-    // Weapon slots 1-6.
-    const slotNames = ['fists', 'pistol', 'smg', 'shotgun', 'sniper', 'rpg'];
-    for (let i = 0; i < 6; i++) {
+    // Weapon slots 1-7 (7 = grenade, sprint 14).
+    const slotNames = ['fists', 'pistol', 'smg', 'shotgun', 'sniper', 'rpg', 'grenade'];
+    for (let i = 0; i < 7; i++) {
       if (keyPressed('Digit' + (i + 1))) {
         const name = slotNames[i];
         if (progress && typeof progress.selectWeapon === 'function') progress.selectWeapon(name);
@@ -977,7 +994,14 @@ function animate() {
       const wid = currentWeaponId();
       if (keyPressed('KeyF')) doPunch();
       else if (game._fireCd <= 0) {
-        if (wid === 'fists') {
+        // Sprint 14: grenades throw on G or click, not hitscan.
+        if (wid === 'grenade') {
+          if (keyPressed('KeyG') || mouseClicked(0)) {
+            const res = grenades.throwFromPlayer();
+            if (res.ok) game._fireCd = 0.9;
+            else { toast(res.reason === 'no ammo' ? 'Ammo habis!' : 'CORAL CHARGE not owned'); game._fireCd = 0.4; }
+          }
+        } else if (wid === 'fists') {
           if (mouseClicked(0)) doPunch();
         } else {
           const w = currentWeaponDef() || {};
@@ -996,6 +1020,11 @@ function animate() {
     }
 
     player.update(dt, input, { colliders: city.colliders, trafficCars: traffic.cars, camYaw: game.camYaw });
+
+    // Sprint 14: flyable heli (own E handling + flight model).
+    if (flyHeli && typeof flyHeli.update === 'function') {
+      try { flyHeli.update(dt, input, { player: player, police: police, game: game }); } catch (e) {}
+    }
 
     const car = getCar();
     const driving = isDriving();
@@ -1019,6 +1048,10 @@ function animate() {
       busted = pol.busted === true;
     } catch (e) {}
     progress.update(dt);
+    // Sprint 14: step live grenades (gravity, fuse, detonation).
+    if (grenades && typeof grenades.update === 'function') {
+      try { grenades.update(dt); } catch (e) {}
+    }
     airUnit.update(dt, playerPos(), police.wanted, t);
     roadblocks.update(dt, police.wanted, playerPos(), driving && car ? carAngle(car) : playerAngle());
     syncRoadblockCarPos();
@@ -1062,6 +1095,13 @@ function animate() {
         }
       }, audio);
     } catch (e) {}
+    // Sprint 14: missions advance in real play. This call was missing since
+    // v3, so no mission ever progressed past stage 0 in the live game.
+    // Frozen in shot/demo/selftest modes so staged screenshots and the
+    // scripted selftest stay exactly as composed.
+    if (!isShot && !isDemo && !isSelftest) {
+      try { missions.update(dt); } catch (e) {}
+    }
     detectDeaths();
     updatePickups(dt, t);
     updateCamera(dt);

@@ -231,6 +231,11 @@ function stageShot(game, n) {
     startMissionByName(game, 'Harbor Heat');
     clearDialogue(game);
     game.camYaw = 0.55; game.camDist = 10; game.camPitch = 0.15;
+    // Sprint 14: police heli AIR-2 hovers off to one side (showcase offset)
+    // so it stays in frame instead of directly overhead.
+    if (game.flyHeli) {
+      game.flyHeli.showcaseOffset = { x: 18, z: -26 };
+    }
     if (game.airUnit) { game.airUnit.holdAngle = game.camYaw + Math.PI + 0.15; game.airUnit.height = 12; }
     if (game.roadblocks) {
       try {
@@ -242,11 +247,23 @@ function stageShot(game, n) {
       patchRoadblockMinimap(game);
     }
   } else if (n === 2) {
-    putPlayerInCar(game, -130, 300, Math.PI / 2, 10);
+    // Sprint 14: the player flies the SEAGULL over the beach road instead
+    // of driving it — the ground life below stays staged as before.
+    // (Enter the heli AFTER the mission starts, so a mission stage cannot
+    // reset the player's mode back to foot.)
     try { if (progress) progress.addRep(180); } catch (e) {}
     startMissionByName(game, 'Neon Street Race');
     clearDialogue(game);
-    game.camYaw = -Math.PI / 2; game.camDist = 8;
+    setPlayerPos(game, 20, 282);
+    try { if (game.flyHeli && typeof game.flyHeli.enterHeli === 'function') game.flyHeli.enterHeli(); } catch (e) {}
+    try {
+      if (game.flyHeli && game.flyHeli.pos) {
+        game.flyHeli.pos.set(-100, 22, 296);
+        game.flyHeli.heading = Math.PI / 2;
+        game.flyHeli.fwdSpeed = 6;
+      }
+    } catch (e) {}
+    game.camYaw = -Math.PI / 2; game.camDist = 12; game.camPitch = 0.3;
     try {
       const pedSpots = [[-124, 290], [-119, 302], [-114, 290], [-104, 302], [-98, 290], [-92, 302], [-86, 290], [-80, 302]];
       const peds = (game.peds && game.peds.list) || [];
@@ -287,7 +304,12 @@ function stageShot(game, n) {
     setPlayerAngle(game, Math.PI);
     setHeat(game, 55);
     try { if (progress) { progress.addRep(950); progress.owned.smg = true; progress.ammo.smg = 120; progress.owned.sniper = true; progress.ammo.sniper = 12; } } catch (e) {}
-    try { if (progress) progress.selectWeapon('sniper'); } catch (e) {}
+    // Sprint 14: CORAL CHARGE in hand (slot 7) + one already arcing toward
+    // the enemies — the orange charge is visible mid-flight in the shot.
+    try {
+      if (progress) { progress.owned.grenade = true; progress.ammo.grenade = 11; progress.selectWeapon('grenade'); }
+    } catch (e) {}
+    try { if (game.grenades) game.grenades.throwAt(5, -28); } catch (e) {}
     startMissionByName(game, 'Vulture War');
     if (missions) { missions.dialogueIdx = 1; missions._holdDialogue = true; }
     try {
@@ -301,13 +323,7 @@ function stageShot(game, n) {
     putPlayerInCar(game, 0, -240, 0, 26);
     setHeat(game, 220);
     try { if (progress) { progress.addRep(950); progress.owned.shotgun = true; progress.ammo.shotgun = 24; } } catch (e) {}
-    startMissionByName(game, 'The Big Score');
-    if (missions) {
-      missions.stage = 3;
-      if (typeof missions._beginStage === 'function') {
-        try { missions._beginStage(3); } catch (e) { log('_beginStage failed: ' + (e && e.message ? e.message : e)); }
-      }
-    }
+    startMissionByName(game, 'One Last Job');
     clearDialogue(game);
     game.camYaw = Math.PI; game.camDist = 11; game.camPitch = 0.15;
     if (game.airUnit) { game.airUnit.holdAngle = game.camYaw + Math.PI + 0.55; game.airUnit.height = 17; game.airUnit.radius = 28; }
@@ -431,7 +447,7 @@ async function runSelftest(game) {
   const trafficOk = trafficCount === 14;
   const parkedOk = parkedCount === 14; // 12 cars + 2 parked bikes (sprint 12)
   const pedsOk = pedCount === 26;
-  const missionsOk = missionDefs === 12; // 10 + Night Shift + The Last Ferry (sprint 12)
+  const missionsOk = missionDefs === 14; // 12 + One Last Job + Harbour Lights (sprint 14)
   const playerAlive = game.player && game.player.health > 0;
   const noErrors = (window.__errors || []).length === 0;
   const details = {};

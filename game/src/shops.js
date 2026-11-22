@@ -5,6 +5,8 @@ const GARAGE_ITEMS = [
   { id: 'repair', name: 'Full Repair', desc: 'Restore your car to 100% condition', price: 150 },
   { id: 'tune', name: 'Engine Tune', desc: 'Stage tune — +8% top speed (max 3)', price: 600 },
   { id: 'armor', name: 'Body Armor', desc: '+50 armor, absorbs damage first', price: 400 },
+  { id: 'nitrous', name: 'Nitrous Boost', desc: 'Permanent +15% top speed, every car', price: 900 },
+  { id: 'tires', name: 'Reinforced Tires', desc: 'Bumps steal half as much speed', price: 500 },
 ];
 
 const RANKS = ['HUSTLER', 'RUNNER', 'FIXER', 'SHOT CALLER', 'BAY KING'];
@@ -14,6 +16,7 @@ function ammoPrice(w) {
   if (w.id === 'shotgun') return 90;
   if (w.id === 'sniper') return 100;
   if (w.id === 'rpg') return 200;
+  if (w.id === 'grenade') return 150;
   return 60;
 }
 
@@ -98,7 +101,8 @@ export class Shops {
       const carText = car ? ('Car: ' + Math.round(car.condition) + '% condition') : 'on foot';
       this.subEl.textContent =
         'Repairs & tunes. Cash: $' + cash + ' · ' + carText +
-        ' · Tune stage ' + progress.tune + '/3 · Armor ' + progress.armor;
+        ' · Tune stage ' + progress.tune + '/3 · Armor ' + progress.armor +
+        (progress.nitro ? ' · NITRO ✓' : '') + (progress.tires ? ' · TIRES ✓' : '');
       for (const item of GARAGE_ITEMS) {
         const row = document.createElement('div');
         row.className = 'shop-row';
@@ -113,6 +117,8 @@ export class Shops {
         if (item.id === 'tune' && progress.tune >= 3) btn.disabled = true;
         if (item.id === 'armor' && progress.armor >= 100) btn.disabled = true;
         if (item.id === 'repair' && !car) btn.disabled = true;
+        if (item.id === 'nitrous' && progress.nitro) btn.disabled = true;
+        if (item.id === 'tires' && progress.tires) btn.disabled = true;
         btn.addEventListener('click', () => this._buyGarage(item));
         row.appendChild(label);
         row.appendChild(desc);
@@ -165,6 +171,12 @@ export class Shops {
     } else if (item.id === 'armor') {
       if (progress.armor >= 100) return;
       progress.armor = Math.min(100, progress.armor + 50);
+    } else if (item.id === 'nitrous') {
+      if (progress.nitro) return;
+      progress.nitro = true;
+    } else if (item.id === 'tires') {
+      if (progress.tires) return;
+      progress.tires = true;
     }
     player.cash -= item.price;
     progress.addRep(10);

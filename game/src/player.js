@@ -155,9 +155,13 @@ export class Player {
     const d = this._down(input, 'KeyD');
     let carSpeed = typeof this.carSpeed === 'number' ? this.carSpeed : 0;
     const isBike = !!car.bike;
-    // Sprint 12 — bikes: quicker off the line, higher top speed than cars.
-    // Car top speed stays at its original 38; bikes go to 45.
-    const topSpeed = isBike ? 45 : 38;
+    // Top speed grows with garage upgrades: each tune stage +8% (the
+    // progress comment always promised this), Nitrous Boost +15% more.
+    // With no upgrades the factors are 1, so stock handling is unchanged.
+    const prog = this.progress || null;
+    const tuneBoost = prog ? 1 + 0.08 * (prog.tune || 0) : 1;
+    const nitroBoost = prog && prog.nitro ? 1.15 : 1;
+    const topSpeed = (isBike ? 45 : 38) * tuneBoost * nitroBoost;
     const topReverse = 12;
     if (w) {
       carSpeed += (isBike ? 20 : 14) * dt;
@@ -188,7 +192,8 @@ export class Player {
     const nextX = car.pos.x + Math.sin(car.angle) * carSpeed * dt;
     const nextZ = car.pos.z + Math.cos(car.angle) * carSpeed * dt;
     if (this._hitsBuilding(nextX, nextZ, 1.2, colliders)) {
-      carSpeed *= 0.3;
+      // Reinforced Tires: a wall scrape keeps 65% of speed, not 30%.
+      carSpeed *= (this.progress && this.progress.tires) ? 0.65 : 0.3;
     } else {
       car.pos.x = nextX;
       car.pos.z = nextZ;
@@ -199,7 +204,8 @@ export class Player {
         const dx = car.pos.x - other.pos.x;
         const dz = car.pos.z - other.pos.z;
         if (Math.sqrt(dx * dx + dz * dz) < 2.4) {
-          carSpeed *= 0.5;
+          // Reinforced Tires: a traffic bump keeps 75% of speed, not 50%.
+          carSpeed *= (this.progress && this.progress.tires) ? 0.75 : 0.5;
           car.pos.x -= Math.sin(car.angle) * 0.8;
           car.pos.z -= Math.cos(car.angle) * 0.8;
           break;

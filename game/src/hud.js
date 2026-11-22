@@ -61,7 +61,7 @@ export class HUD {
         const idx = game.missions.idx ?? 0;
         const stage = game.missions.stage ?? game.missions.currentStageIndex ?? 0;
         const timeLeft = game.missions.timeLeft ?? 0;
-        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/12 — ' + m.name.toUpperCase();
+        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/14 — ' + m.name.toUpperCase();
         if (stageEl && st && m) stageEl.textContent = 'STAGE ' + (stage + 1) + '/' + m.stages.length + ' — ' + st.text;
         if (fill && m) fill.style.width = Math.round(((stage + 1) / m.stages.length) * 100) + '%';
         if (timerEl) timerEl.textContent = timeLeft > 0 ? '⏱ ' + Math.ceil(timeLeft) + 's LEFT' : '';
@@ -71,7 +71,7 @@ export class HUD {
         if (fill) fill.style.width = '100%';
         if (timerEl) timerEl.textContent = '';
       } else {
-        if (mTitle) mTitle.textContent = 'MISSION 1/12 — FRESH START';
+        if (mTitle) mTitle.textContent = 'MISSION 1/14 — FRESH START';
         if (stageEl) stageEl.textContent = 'Press Start to begin the story';
         if (timerEl) timerEl.textContent = '';
       }
@@ -376,6 +376,23 @@ export class HUD {
         ctx.fillStyle = '#ffe14d';
         ctx.beginPath();
         ctx.arc(toX(ap.x), toY(ap.z), 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Sprint 14: flyable heli (cyan) + police heli AIR-2 (yellow) on minimap.
+    if (game.flyHeli) {
+      const hp = game.flyHeli.heliPos ? game.flyHeli.heliPos() : null;
+      if (hp) {
+        ctx.fillStyle = '#7fe8ff';
+        ctx.beginPath();
+        ctx.arc(toX(hp.x), toY(hp.z), 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const cp = game.flyHeli.policePos ? game.flyHeli.policePos() : null;
+      if (cp) {
+        ctx.fillStyle = '#ffe14d';
+        ctx.beginPath();
+        ctx.arc(toX(cp.x), toY(cp.z), 4, 0, Math.PI * 2);
         ctx.fill();
       }
     }
