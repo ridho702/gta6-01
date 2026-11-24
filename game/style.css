@@ -487,3 +487,42 @@ html, body {
 .shop-row button:disabled { background: #555; color: #999; cursor: default; }
 
 #shop-foot { margin-top: 12px; font-size: 12px; color: #999; text-align: center; }
+
+/* ---- Sprint 15: classic GTA-style WASTED screen ---- */
+/* Full-screen near-black overlay; the word WASTED is huge, pale grey with
+   a hard black outline, fading in over ~1s. The explanation text and the
+   Respawn button stay hidden for ~2.5s, then fade in. Toggling the
+   screen's display (none -> flex) replays the animations every death. */
+#screen-wasted {
+  background: rgba(0, 0, 0, 0.88);
+}
+
+#screen-wasted .panel {
+  background: transparent;
+  border: none;
+  max-width: none;
+}
+
+#screen-wasted h1 {
+  font-family: 'Arial Black', Impact, Arial, sans-serif;
+  font-size: 96px;
+  letter-spacing: 16px;
+  color: #d8d8d8;
+  text-shadow: 0 0 4px #000, 0 4px 0 #000, 0 0 32px rgba(0, 0, 0, 0.9);
+  animation: wasted-in 1s ease-out both;
+}
+
+#screen-wasted p,
+#screen-wasted button {
+  animation: wasted-late 0.6s ease-in 2.5s both;
+}
+
+@keyframes wasted-in {
+  from { opacity: 0; transform: scale(1.18); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes wasted-late {
+  from { opacity: 0; visibility: hidden; }
+  to { opacity: 1; visibility: visible; }
+}

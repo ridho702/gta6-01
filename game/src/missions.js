@@ -1,9 +1,10 @@
-// Solmar Bay — the story. Fourteen missions, played in order, each with stages,
+// Solmar Bay — the story. Fifteen missions, played in order, each with stages,
 // dialogue, a beacon marking the target, timers, and a cash reward. Dana
 // Reyes is back in Solmar Bay with $250 and a debt to Marlow, and works it
 // off one job at a time.
 
 import { dist2 } from './util.js';
+import { createCarMesh } from './vehicles.js';
 
 const DIALOGUE_TIME = 5; // seconds before a line advances on its own
 
@@ -21,6 +22,7 @@ export class Missions {
     this.dialogueIdx = 0;
     this.dialogueTimer = 0;
     this.starterCar = null;
+    this.kingCar = null; // sprint 15: the fresh Comet GT for King of Solmar
     this.caseMesh = null;
     this._buildBeacon();
     this.defs = this._defs();
@@ -248,6 +250,21 @@ export class Missions {
         ],
         reward: 10000,
       },
+      {
+        name: 'King of Solmar',
+        intro: [
+          { name: 'Dana', text: 'The pier is mine, the harbour lights are mine — so why does Marlow sound nervous on the phone?' },
+          { name: 'Mira', text: 'Because the last Comet GT in the bay just rolled into the east blocks, and every crew left in Solmar wants it. Whoever drives it home tonight is the one they call king.' },
+          { name: 'Dana', text: 'Then I take it. One last steal, one last chase — and this time I do not run from the crown.' },
+          { name: 'Marlow', text: 'Bring that Comet to the harbour docks, Dana, and no one in this city ever questions your name again. King of Solmar — go earn it.' },
+        ],
+        stages: [
+          { type: 'steal', target: { x: 86, z: -96 }, radius: 6, time: 180, text: 'Steal the Comet GT (press E)' },
+          { type: 'loseHeat', target: null, radius: 0, text: 'Lose the heat — get wanted down to 2 stars' },
+          { type: 'deliver', target: L.docks, radius: 9, text: 'Deliver the Comet GT to the harbour docks' },
+        ],
+        reward: 12000,
+      },
     ];
   }
 
@@ -364,6 +381,58 @@ export class Missions {
         { name: 'Dana', text: 'Then I am staying. No ferry, no running. This city is home now — and I rule it.' },
       ]);
     }
+    if (this.idx === 14 && this.stage === 0) {
+      // Epilogue car: a fresh red Comet GT waits in the east blocks. The
+      // original was stolen back in Hot Wheels, so a new one is parked
+      // here every time the mission (re)starts — a retry after a fail or
+      // a death never strands the player with no car left to steal.
+      const spot = { x: 86, z: -96 };
+      if (!this.kingCar) {
+        const built = createCarMesh(this.THREE, 0xd02030, true);
+        built.group.position.set(spot.x, 0, spot.z);
+        built.group.rotation.y = Math.PI / 2;
+        this.scene.add(built.group);
+        this.kingCar = {
+          mesh: built.group,
+          pos: { x: spot.x, z: spot.z },
+          angle: Math.PI / 2,
+          taken: false,
+          sport: true,
+          bike: false,
+          color: 0xd02030,
+          name: 'Comet GT',
+          collector: false,
+          condition: 100,
+        };
+        this.game.traffic.parked.push(this.kingCar);
+      } else {
+        this.kingCar.taken = false;
+        this.kingCar.pos.x = spot.x;
+        this.kingCar.pos.z = spot.z;
+        this.kingCar.angle = Math.PI / 2;
+        this.kingCar.mesh.position.set(spot.x, 0, spot.z);
+        this.kingCar.mesh.rotation.y = Math.PI / 2;
+        this.kingCar.mesh.visible = true;
+      }
+    }
+    if (this.idx === 14 && this.stage === 1) {
+      // The whole bay saw the theft: five stars the moment the chase starts.
+      if (this.kingCar) this.kingCar.taken = true;
+      this.game.police.addHeat(220);
+      this._say([
+        { name: 'Mira', text: 'Five stars, Dana! Every SBPD unit in Solmar is rolling on you — lay low and let the heat bleed off!' },
+        { name: 'Dana', text: 'Let them come. A king does not hide — but he does know when to disappear.' },
+      ]);
+      this.game.hud.toast('5 STARS! Lose the heat — wanted down to 2 stars or less.');
+    }
+    if (this.idx === 14 && this.stage === 2) {
+      // Epilogue: the crown, before the last drive to the harbour.
+      this._say([
+        { name: 'Dana', text: 'Heat is down. The bay went quiet — they know who is driving now.' },
+        { name: 'Mira', text: 'One last drive, Dana. Docks, harbour lights, and the whole city watching.' },
+        { name: 'Marlow', text: 'Bring her home, King of Solmar. I will be at the docks, counting your crown.' },
+      ]);
+    }
     const t = st.target;
     if (t) {
       this.beacon.position.set(t.x, 21, t.z);
@@ -431,6 +500,10 @@ export class Missions {
     if (st.type === 'kill') {
       const left = this.game.combat.livingEnemies().length;
       text += '  (' + left + ' left)';
+    }
+    if (st.type === 'loseHeat') {
+      const wanted = this.game.police ? this.game.police.wanted : 0;
+      text += '  (★' + wanted + '/5 — reach 2 or less)';
     }
     if (st.type === 'hold' && this.holdProgress > 0) {
       text += '  ' + Math.ceil(this.holdProgress) + 's / 5s';
@@ -507,6 +580,13 @@ export class Missions {
           game.hud.toast('Stolen! The cops are coming.');
           this._advanceStage();
         }
+        break;
+      }
+      case 'loseHeat': {
+        // Sprint 15 (King of Solmar): five stars at the start of the
+        // stage; done once the heat has bled off to two stars or less.
+        // Heat decays over time, and Mira's Swap Plates (Z) drops a star.
+        if (game.police.wanted <= 2) this._advanceStage();
         break;
       }
       case 'kill': {

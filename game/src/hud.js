@@ -61,7 +61,7 @@ export class HUD {
         const idx = game.missions.idx ?? 0;
         const stage = game.missions.stage ?? game.missions.currentStageIndex ?? 0;
         const timeLeft = game.missions.timeLeft ?? 0;
-        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/14 — ' + m.name.toUpperCase();
+        if (mTitle && m) mTitle.textContent = 'MISSION ' + (idx + 1) + '/15 — ' + m.name.toUpperCase();
         if (stageEl && st && m) stageEl.textContent = 'STAGE ' + (stage + 1) + '/' + m.stages.length + ' — ' + st.text;
         if (fill && m) fill.style.width = Math.round(((stage + 1) / m.stages.length) * 100) + '%';
         if (timerEl) timerEl.textContent = timeLeft > 0 ? '⏱ ' + Math.ceil(timeLeft) + 's LEFT' : '';
@@ -71,7 +71,7 @@ export class HUD {
         if (fill) fill.style.width = '100%';
         if (timerEl) timerEl.textContent = '';
       } else {
-        if (mTitle) mTitle.textContent = 'MISSION 1/14 — FRESH START';
+        if (mTitle) mTitle.textContent = 'MISSION 1/15 — FRESH START';
         if (stageEl) stageEl.textContent = 'Press Start to begin the story';
         if (timerEl) timerEl.textContent = '';
       }
@@ -166,6 +166,15 @@ export class HUD {
           const gear = carSpeed < -0.5 ? 'R' : kmh < 1 ? 'N' : kmh < 30 ? '1' : kmh < 60 ? '2' : kmh < 90 ? '3' : kmh < 120 ? '4' : '5';
           gearEl.textContent = 'GEAR ' + gear + ' · TUNE ' + (p ? p.tune : 0) + '/3' + (p && p.armor > 0 ? ' · ARMOR ' + Math.round(p.armor) : '');
         }
+      } else if (player.mode === 'boat' && game.boat) {
+        // Sprint 15: boat reuses the car panel (BAY RUNNER).
+        carPanel.style.display = 'block';
+        const nameEl = this.el('hud-car-name');
+        if (nameEl) nameEl.textContent = 'BAY RUNNER';
+        const condEl = this.el('hud-car-cond');
+        if (condEl) condEl.textContent = 'SPEED ' + Math.round(Math.abs(game.boat.speed) * 3.6) + ' km/h';
+        const gearEl = this.el('hud-car-gear');
+        if (gearEl) gearEl.textContent = 'W/S gas · A/D belok · E turun di dermaga';
       } else {
         carPanel.style.display = 'none';
       }
@@ -215,6 +224,10 @@ export class HUD {
         const carSpeed = player.carSpeed ?? (player.car ? player.car.speed : 0) ?? 0;
         this.speedEl.style.display = 'block';
         this.speedEl.textContent = Math.round(Math.abs(carSpeed) * 3.6) + ' km/h';
+      } else if (player.mode === 'boat' && game.boat) {
+        // Sprint 15: speed from the boat while aboard.
+        this.speedEl.style.display = 'block';
+        this.speedEl.textContent = Math.round(Math.abs(game.boat.speed) * 3.6) + ' km/h';
       } else {
         this.speedEl.style.display = 'none';
       }
@@ -396,6 +409,16 @@ export class HUD {
         ctx.fill();
       }
     }
+    // Sprint 15: boat on minimap (cyan dot), right after the heli block.
+    if (game.boat) {
+      const bp = game.boat.boatPos ? game.boat.boatPos() : null;
+      if (bp) {
+        ctx.fillStyle = '#7fd4ff';
+        ctx.beginPath();
+        ctx.arc(toX(bp.x), toY(bp.z), 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     if (game.roadblocks && game.roadblocks.blocks) {
       ctx.fillStyle = '#ff9a3d';
       for (const b of game.roadblocks.blocks) {
@@ -448,6 +471,19 @@ export class HUD {
     this.toastEl.style.display = 'block';
     if (this._toastTimer) clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => { this.toastEl.style.display = 'none'; }, 4000);
+  }
+
+  // Sprint 15: classic GTA-style WASTED screen. showOverlay('wasted')
+  // already targets #screen-wasted; this wrapper is the death path's
+  // call site, and toggling display none -> flex replays the CSS
+  // fade-in on #screen-wasted every time it is shown.
+  showWasted() {
+    this.showOverlay('wasted');
+  }
+
+  hideWasted() {
+    const el = this.el('screen-wasted');
+    if (el) el.style.display = 'none';
   }
 
   showOverlay(name) {

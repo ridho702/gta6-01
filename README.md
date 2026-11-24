@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/gta6-01/ridho702/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/ridho702/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-Solmar Bay — an original 3D open-world crime game in the spirit of GTA VI, built from scratch in a single recorded agent session. Dana Reyes returns to a sun-soaked fictional coastal city at golden hour with $250 and a debt to Marlow, and works it off across ten story missions: stealing a Comet GT, running timed courier drops, racing rival Vex through the neon streets, stealing a collector's Solstice S, clearing the docks of the Vultures gang, cracking the Solmar Bank vault, and escaping to the pier with the case from the airfield — while the SBPD dispatch, its AIR-1 helicopter and roadblocks close in.
+Solmar Bay — an original 3D open-world crime game in the spirit of GTA VI, built from scratch in a single recorded agent session. Dana Reyes returns to a sun-soaked fictional coastal city at golden hour with $250 and a debt to Marlow, and works it off across fifteen story missions: stealing a Comet GT, running timed courier drops, racing rival Vex through the neon streets, stealing a collector's Solstice S, clearing the docks of the Vultures gang, cracking the Solmar Bank vault, escaping to the pier with the case from the airfield, flying the SEAGULL helicopter, and finally earning the crown as King of Solmar — while the SBPD dispatch, its AIR-1 helicopter and roadblocks close in.
 
 ## Run it
 

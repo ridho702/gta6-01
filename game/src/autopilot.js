@@ -447,7 +447,7 @@ async function runSelftest(game) {
   const trafficOk = trafficCount === 14;
   const parkedOk = parkedCount === 14; // 12 cars + 2 parked bikes (sprint 12)
   const pedsOk = pedCount === 26;
-  const missionsOk = missionDefs === 14; // 12 + One Last Job + Harbour Lights (sprint 14)
+  const missionsOk = missionDefs === 15; // 14 + King of Solmar (sprint 15)
   const playerAlive = game.player && game.player.health > 0;
   const noErrors = (window.__errors || []).length === 0;
   const details = {};

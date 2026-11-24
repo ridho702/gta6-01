@@ -22,6 +22,8 @@ import { AirUnit, Roadblocks } from './airunit.js';
 import { Shops } from './shops.js';
 import { FlyHeli } from './flyheli.js';
 import { Grenades } from './grenades.js';
+import { Boat } from './boat.js';
+import { DayNight } from './daynight.js';
 import { Particles } from './particles.js';
 import { dressCity } from './citydress.js';
 
@@ -148,6 +150,17 @@ const flyHeli = new FlyHeli(scene, THREE, { player: player, police: police, game
 game.flyHeli = flyHeli;
 const grenades = new Grenades(game);
 game.grenades = grenades;
+// Sprint 15: drivable boat (moored at the south pier) + day/night cycle.
+// Deviation from the builders' contracts, recorded: DayNight's contract
+// says construct right after dressCity() + scene.add(city.group), but
+// `game` does not exist yet at that point in this file (it is defined
+// below the city setup), so both systems are constructed here instead,
+// next to the other systems — the city is already in the scene, so the
+// lamp scan still works, and the opening 18:47 sunset is unchanged.
+const boat = new Boat(scene, THREE, { player: player, game: game, particles: particles });
+game.boat = boat;
+const daynight = new DayNight(scene, sun, hemi, { game: game });
+game.daynight = daynight;
 audio.setStation(STATIONS[0]);
 
 // Soft shadows for everything built so far. Ground / water / light pools
@@ -528,6 +541,9 @@ function hospitalPos() {
   return { x: 0, z: 0 };
 }
 
+// Sprint 15: flat hospital fee charged when Dana wakes up WASTED.
+const HOSPITAL_FEE = 100;
+
 function respawn(atHospital) {
   const hosp = hospitalPos();
   setPlayerPos(hosp.x + 8, hosp.z + 8);
@@ -537,6 +553,11 @@ function respawn(atHospital) {
   // Sprint 14: drop the player out of the heli too (died mid-air).
   if (flyHeli && typeof flyHeli.forceExit === 'function') {
     try { flyHeli.forceExit(); } catch (e) {}
+  }
+  // Sprint 15: drop the player out of the boat too (died at sea) and
+  // re-moor it at the dock.
+  if (typeof boat !== 'undefined' && boat && typeof boat.forceExit === 'function') {
+    try { boat.forceExit(); } catch (e) {}
   }
   try {
     if (typeof police.clear === 'function') police.clear();
@@ -806,7 +827,12 @@ function detectDeaths() {
 // ------------------------------------------------------------------ camera
 function updateSun() {
   const pp = playerPos();
-  sun.position.set(pp.x - 220, 55, pp.z + 140);
+  // Sprint 15: the day/night cycle owns the sun offset now (at 18:47 it
+  // returns exactly (-220, 55, 140), the offset used before).
+  let off = null;
+  try { off = (typeof daynight !== 'undefined' && daynight) ? daynight.sunOffset() : null; } catch (e) { off = null; }
+  if (off) sun.position.set(pp.x + off.x, off.y, pp.z + off.z);
+  else sun.position.set(pp.x - 220, 55, pp.z + 140);
   sun.target.position.set(pp.x, 0, pp.z);
   sun.target.updateMatrixWorld();
 }
@@ -884,7 +910,8 @@ function animate() {
   }
 
   if (game.state === 'playing') {
-    game.clockMinutes += dt * 0.5;
+    // Sprint 15: DayNight owns the clock now (it writes game.clockMinutes
+    // itself); the old `game.clockMinutes += dt * 0.5` line is deleted.
 
     if (keyPressed('KeyP')) togglePause();
     if (keyPressed('KeyM')) {
@@ -1026,6 +1053,11 @@ function animate() {
       try { flyHeli.update(dt, input, { player: player, police: police, game: game }); } catch (e) {}
     }
 
+    // Sprint 15: drivable boat (own E handling + sailing model).
+    if (typeof boat !== 'undefined' && boat && typeof boat.update === 'function') {
+      try { boat.update(dt, input, { player: player, police: police, game: game }); } catch (e) {}
+    }
+
     const car = getCar();
     const driving = isDriving();
     traffic.update(dt, driving && car ? carPos(car) : null);
@@ -1102,6 +1134,12 @@ function animate() {
     if (!isShot && !isDemo && !isSelftest) {
       try { missions.update(dt); } catch (e) {}
     }
+    // Sprint 15: advance the day/night cycle under the SAME freeze gate
+    // missions use, so staged screenshots and the scripted selftest keep
+    // the opening 18:47 sunset.
+    if (!isShot && !isDemo && !isSelftest) {
+      try { daynight.update(dt, isShot || isDemo || isSelftest); } catch (e) {}
+    }
     detectDeaths();
     updatePickups(dt, t);
     updateCamera(dt);
@@ -1132,7 +1170,10 @@ function animate() {
       game.state = 'wasted';
       if (audio && typeof audio.setEngine === 'function') audio.setEngine(false, 0);
       stopSiren();
-      if (hud && typeof hud.showOverlay === 'function') hud.showOverlay('wasted');
+      // Sprint 15: classic WASTED screen (hud.showWasted); the $100
+      // hospital fee is charged when the player hits Respawn.
+      if (hud && typeof hud.showWasted === 'function') hud.showWasted();
+      else if (hud && typeof hud.showOverlay === 'function') hud.showOverlay('wasted');
     } else if (busted) {
       game.state = 'busted';
       stopSiren();
@@ -1164,7 +1205,9 @@ if (btnResume) btnResume.addEventListener('click', () => togglePause());
 const btnRespawn = document.getElementById('btn-respawn');
 if (btnRespawn) {
   btnRespawn.addEventListener('click', () => {
-    player.cash = Math.floor((typeof player.cash === 'number' ? player.cash : 0) / 2);
+    // Sprint 15: flat $100 hospital fee (was: half the cash).
+    player.cash = Math.max(0, (typeof player.cash === 'number' ? player.cash : 0) - HOSPITAL_FEE);
+    toast('Hospital fee: -$' + HOSPITAL_FEE);
     respawn(true);
   });
 }
